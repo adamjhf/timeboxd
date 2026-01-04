@@ -7,6 +7,7 @@ use governor::{
 };
 use jiff::{civil::Date, fmt::temporal::DateTimeParser};
 use serde::Deserialize;
+use tracing::warn;
 
 use crate::{
     error::AppResult,
@@ -22,9 +23,8 @@ pub struct TmdbClient {
 
 impl TmdbClient {
     pub fn new(client: reqwest::Client, access_token: String, base_url: String, rps: u32) -> Self {
-        // Warn once on app load if using mock data
         if access_token.trim().is_empty() {
-            tracing::warn!("Using mock TMDB data - no TMDB_ACCESS_TOKEN provided");
+            warn!("TMDB_ACCESS_TOKEN not provided, using mock data");
         }
 
         let limiter =

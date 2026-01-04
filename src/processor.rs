@@ -1,4 +1,5 @@
 use futures::{StreamExt, stream};
+use tracing::{debug, warn};
 
 use crate::{
     cache::CacheManager,
@@ -19,41 +20,36 @@ pub async fn process(
 ) -> AppResult<Vec<FilmWithReleases>> {
     let cutoff_year = current_year.saturating_sub(3);
 
-    tracing::debug!(
-        total_films = films.len(),
-        cutoff_year = cutoff_year,
-        "filtering films by year"
-    );
+    debug!(total_films = films.len(), cutoff_year = cutoff_year, "filtering films by year");
 
     let films = films
         .into_iter()
         .filter(|f| f.year.map(|y| y >= cutoff_year).unwrap_or(true))
         .collect::<Vec<_>>();
 
-    tracing::debug!(filtered_films = films.len(), "films after year filtering");
+    debug!(filtered_films = films.len(), "films after year filtering");
 
     let items: Vec<Option<FilmWithReleases>> = stream::iter(films)
         .map(|film| async move {
-            tracing::debug!(slug = %film.letterboxd_slug, "processing film");
+            debug!(slug = %film.letterboxd_slug, "processing film");
             let result: AppResult<Option<FilmWithReleases>> = async {
                 let Some((tmdb_id, title, year)) =
                     resolve_tmdb_id(http, cache, tmdb, &film.letterboxd_slug, film.year).await?
                 else {
-                    tracing::debug!(slug = %film.letterboxd_slug, "no TMDB ID found, skipping");
+                    debug!(slug = %film.letterboxd_slug, "no TMDB ID found");
                     return Ok(None);
                 };
 
-                tracing::debug!(slug = %film.letterboxd_slug, tmdb_id = tmdb_id, "fetching release dates");
+                debug!(slug = %film.letterboxd_slug, tmdb_id = tmdb_id, "fetching release dates");
 
                 let (theatrical, streaming) =
                     if let Some(cached) = cache.get_releases(tmdb_id, country).await? {
-                        tracing::debug!(slug = %film.letterboxd_slug, "using cached release dates");
+                        debug!(slug = %film.letterboxd_slug, "using cached release dates");
                         cached
                     } else {
                         let fetched = tmdb.get_release_dates(tmdb_id, country).await?;
-                        tracing::debug!(slug = %film.letterboxd_slug, theatrical_count = fetched.0.len(), streaming_count = fetched.1.len(), "fetched release dates");
+                        debug!(slug = %film.letterboxd_slug, theatrical = fetched.0.len(), streaming = fetched.1.len(), "fetched release dates");
 
-                        // Don't cache mock release dates (identified by "Mock" in notes)
                         let has_mock_data = fetched.0.iter().any(|r| r.note.as_ref().map_or(false, |n| n.contains("Mock")))
                             || fetched.1.iter().any(|r| r.note.as_ref().map_or(false, |n| n.contains("Mock")));
 
@@ -74,16 +70,13 @@ pub async fn process(
                     streaming,
                 };
 
-                let has_releases = !out.is_empty();
-                tracing::debug!(slug = %film.letterboxd_slug, has_releases = has_releases, "processed film");
-
                 Ok((!out.is_empty()).then_some(out))
             }.await;
 
             match result {
                 Ok(film) => film,
                 Err(err) => {
-                    tracing::warn!(slug = %film.letterboxd_slug, error = %err, "failed to process film, skipping");
+                    warn!(slug = %film.letterboxd_slug, error = %err, "failed to process film");
                     None
                 }
             }
@@ -94,7 +87,7 @@ pub async fn process(
 
     let mut results: Vec<FilmWithReleases> = items.into_iter().flatten().collect();
 
-    tracing::debug!(result_count = results.len(), "completed processing");
+    debug!(result_count = results.len(), "completed processing");
 
     results.sort_by_key(|f| f.theatrical.first().or_else(|| f.streaming.first()).map(|r| r.date));
 
@@ -108,11 +101,11 @@ async fn resolve_tmdb_id(
     slug: &str,
     year: Option<i16>,
 ) -> AppResult<Option<(i32, String, Option<i16>)>> {
-    tracing::debug!(slug = %slug, "resolving TMDB ID");
+    debug!(slug = %slug, "resolving TMDB ID");
 
     if let Some(cached) = cache.get_film(slug).await? {
         if let Some(tmdb_id) = cached.tmdb_id {
-            tracing::debug!(slug = %slug, tmdb_id = tmdb_id, "found cached TMDB ID");
+            debug!(slug = %slug, tmdb_id = tmdb_id, "found cached TMDB ID");
             return Ok(Some((tmdb_id, cached.title, cached.year.map(|y| y as i16))));
         }
     }
@@ -124,12 +117,12 @@ async fn resolve_tmdb_id(
     {
         Ok(data) => {
             if let Some(id) = data.tmdb_id {
-                tracing::debug!(slug = %slug, tmdb_id = id, "found TMDB ID from Letterboxd");
+                debug!(slug = %slug, tmdb_id = id, "found TMDB ID from Letterboxd");
             }
             (data.title, data.year.or(year), data.tmdb_id)
         },
         Err(err) => {
-            tracing::debug!(slug = %slug, error = %err, "failed to fetch Letterboxd data, will use fallback title");
+            warn!(slug = %slug, error = %err, "failed to fetch Letterboxd data, using fallback title");
             let fallback_title = slug
                 .split('-')
                 .map(|word| {
@@ -146,12 +139,12 @@ async fn resolve_tmdb_id(
     };
 
     if tmdb_id.is_none() {
-        tracing::debug!(slug = %slug, title = %resolved_title, year = ?resolved_year, "searching TMDB API");
+        debug!(slug = %slug, title = %resolved_title, year = ?resolved_year, "searching TMDB API");
         tmdb_id = tmdb.search_movie(&resolved_title, resolved_year).await?;
         if let Some(id) = tmdb_id {
-            tracing::debug!(slug = %slug, tmdb_id = id, "found TMDB ID via search");
+            debug!(slug = %slug, tmdb_id = id, "found TMDB ID via search");
         } else {
-            tracing::debug!(slug = %slug, "no TMDB ID found");
+            debug!(slug = %slug, "no TMDB ID found");
         }
     }
 

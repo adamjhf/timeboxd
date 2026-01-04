@@ -1,6 +1,7 @@
 use std::{collections::HashSet, time::Duration};
 
 use scraper::{Html, Selector};
+use tracing::debug;
 
 use crate::{error::AppResult, models::WishlistFilm};
 
@@ -10,7 +11,7 @@ pub async fn fetch_watchlist(
     delay_ms: u64,
     cutoff_year: i16,
 ) -> AppResult<Vec<WishlistFilm>> {
-    tracing::debug!(username = %username, cutoff_year = cutoff_year, "starting watchlist fetch");
+    debug!(username = %username, cutoff_year = cutoff_year, "fetching watchlist");
 
     let mut out = Vec::new();
     let mut seen = HashSet::new();
@@ -24,12 +25,11 @@ pub async fn fetch_watchlist(
             format!("https://letterboxd.com/{}/watchlist/by/release/page/{}/", username, page)
         };
 
-        tracing::debug!(page = page, url = %url, "fetching watchlist page");
+        debug!(page = page, "fetching watchlist page");
         let html = client.get(&url).send().await?.error_for_status()?.text().await?;
-        tracing::debug!(page = page, html_len = html.len(), "fetched HTML");
 
         let films = parse_watchlist_page(&html)?;
-        tracing::debug!(page = page, films_found = films.len(), "parsed films from page");
+        debug!(page = page, films_found = films.len(), "parsed watchlist page");
 
         if films.is_empty() {
             break;
@@ -51,7 +51,7 @@ pub async fn fetch_watchlist(
         tokio::time::sleep(Duration::from_millis(delay_ms)).await;
     }
 
-    tracing::debug!(total_films = out.len(), "completed watchlist fetch");
+    debug!(username = %username, total_films = out.len(), "completed watchlist fetch");
     Ok(out)
 }
 
@@ -68,24 +68,11 @@ fn parse_watchlist_page(html: &str) -> AppResult<Vec<WishlistFilm>> {
         let Some(title) = title else { continue };
 
         let year = parse_year_from_title(title);
-        let title = strip_trailing_year(title);
-
-        tracing::debug!(slug = %slug, title = %title, year = ?year, "found film in watchlist");
 
         out.push(WishlistFilm { letterboxd_slug: slug.to_string(), year });
     }
 
-    tracing::debug!(film_count = out.len(), "parsed films from page");
     Ok(out)
-}
-
-fn strip_trailing_year(title: &str) -> String {
-    if let Some((t, y)) = split_trailing_year(title) {
-        if y.is_some() {
-            return t.trim().to_string();
-        }
-    }
-    title.trim().to_string()
 }
 
 fn parse_year_from_title(title: &str) -> Option<i16> {
@@ -117,7 +104,7 @@ pub async fn fetch_letterboxd_film_data(
     slug: &str,
 ) -> AppResult<LetterboxdFilmData> {
     let url = format!("https://letterboxd.com/film/{}/", slug);
-    tracing::debug!(slug = %slug, url = %url, "fetching Letterboxd film page");
+    debug!(slug = %slug, "fetching Letterboxd film page");
     let html = client.get(&url).send().await?.error_for_status()?.text().await?;
 
     let doc = Html::parse_document(&html);
@@ -136,7 +123,7 @@ pub async fn fetch_letterboxd_film_data(
         if let Some(link) = doc.select(&tmdb_link_selector).next() {
             if let Some(href) = link.value().attr("href") {
                 if let Some(id) = extract_tmdb_id_from_url(href) {
-                    tracing::debug!(slug = %slug, tmdb_id = id, "extracted TMDB ID from link");
+                    debug!(slug = %slug, tmdb_id = id, "extracted TMDB ID from link");
                     tmdb_id = Some(id);
                 }
             }
@@ -152,7 +139,7 @@ pub async fn fetch_letterboxd_film_data(
 
     let (title, year) = parse_title_and_year(title_with_year);
 
-    tracing::debug!(slug = %slug, title = %title, year = ?year, tmdb_id = ?tmdb_id, "parsed Letterboxd film data");
+    debug!(slug = %slug, title = %title, year = ?year, tmdb_id = ?tmdb_id, "parsed Letterboxd film data");
 
     Ok(LetterboxdFilmData { title: title.to_string(), year, tmdb_id })
 }

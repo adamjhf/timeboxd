@@ -6,6 +6,7 @@ use axum::{
     response::{Html, IntoResponse, Response},
 };
 use serde::Deserialize;
+use tracing::{error, info};
 
 use crate::{AppState, error::AppResult, models::TrackRequest, templates};
 
@@ -41,7 +42,7 @@ pub async fn process(
     let username = q.username.trim().to_string();
     let country = q.country.trim().to_uppercase();
 
-    tracing::debug!(username = %username, country = %country, "starting processing");
+    info!(username = %username, country = %country, "processing request");
 
     let result = async {
         if username.is_empty() {
@@ -55,7 +56,6 @@ pub async fn process(
         let current_year = today.year();
         let cutoff_year = current_year.saturating_sub(3);
 
-        tracing::debug!(cutoff_year = cutoff_year, "fetching watchlist");
         let watchlist = crate::scraper::fetch_watchlist(
             &state.http,
             &username,
@@ -63,14 +63,13 @@ pub async fn process(
             cutoff_year,
         )
         .await?;
-        tracing::info!(film_count = watchlist.len(), "fetched watchlist");
+        info!(username = %username, film_count = watchlist.len(), "fetched watchlist");
 
         if watchlist.is_empty() {
-            tracing::info!("no films in watchlist, returning empty results");
+            info!(username = %username, "empty watchlist");
             return Ok(templates::results_fragment(&username, &country, &[]));
         }
 
-        tracing::debug!("processing films");
         let films = crate::processor::process(
             &state.http,
             &state.cache,
@@ -81,10 +80,10 @@ pub async fn process(
             current_year,
         )
         .await?;
-        tracing::info!(result_count = films.len(), "processed films successfully");
+        info!(username = %username, result_count = films.len(), "completed processing");
 
         if films.is_empty() {
-            tracing::warn!("no films had upcoming releases, returning empty results");
+            info!(username = %username, "no upcoming releases found");
             return Ok(templates::error_fragment(
                 "No upcoming releases found for films in your watchlist.".to_string(),
             ));
@@ -96,7 +95,10 @@ pub async fn process(
 
     let body = match result {
         Ok(html) => html,
-        Err(err) => templates::error_fragment(err.to_string()),
+        Err(err) => {
+            error!(username = %username, error = %err, "request failed");
+            templates::error_fragment(err.to_string())
+        },
     };
 
     let mut resp = Html(body).into_response();

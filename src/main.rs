@@ -18,6 +18,7 @@ use tower_http::{
     cors::{Any, CorsLayer},
     trace::TraceLayer,
 };
+use tracing::info;
 
 use crate::{cache::CacheManager, config::Config, tmdb::TmdbClient};
 
@@ -69,7 +70,7 @@ async fn main() -> anyhow::Result<()> {
         .layer(TraceLayer::new_for_http());
 
     let listener = tokio::net::TcpListener::bind(config.addr).await?;
-    tracing::info!(addr = %config.addr, "listening");
+    info!(addr = %config.addr, "server listening");
     axum::serve(listener, app).await?;
 
     Ok(())
