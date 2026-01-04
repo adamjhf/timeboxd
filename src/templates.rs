@@ -1,4 +1,4 @@
-use maud::{DOCTYPE, Markup, PreEscaped, html};
+use hypertext::{Raw, maud, prelude::*};
 
 use crate::{
     countries::COUNTRIES,
@@ -12,7 +12,7 @@ const DATASTAR_CDN: &str =
 pub fn index_page() -> String {
     page(
         "Letterboxd Release Tracker",
-        html! {
+        maud! {
             div class="min-h-screen bg-gray-50" {
                 div class="max-w-2xl mx-auto px-6 py-12" {
                     div class="bg-white shadow rounded-lg p-8" {
@@ -73,18 +73,18 @@ pub fn processing_page(username: &str, country: &str) -> String {
 
     page(
         "Processing",
-        html! {
+        maud! {
             div class="min-h-screen bg-gray-50 flex items-center justify-center" {
                 div id="content" class="max-w-xl w-full px-6" {
                     div class="bg-white shadow rounded-lg p-8 text-center" {
-                        div class="mx-auto h-12 w-12 rounded-full border-4 border-blue-200 border-t-blue-600 animate-spin" {};
+                        div class="mx-auto h-12 w-12 rounded-full border-4 border-blue-200 border-t-blue-600 animate-spin" {}
                         h1 class="mt-6 text-xl font-semibold text-gray-900" { "Processing" }
                         p class="mt-2 text-gray-600" { "Fetching watchlist and checking release dates." }
                         p class="mt-2 text-sm text-gray-500" { "This may take a minute for large watchlists." }
                     }
                 }
             }
-            script { (PreEscaped(format!("
+            script { (Raw::dangerously_create(format!("
                 fetch('{}')
                     .then(response => response.text())
                     .then(html => {{
@@ -99,7 +99,7 @@ pub fn processing_page(username: &str, country: &str) -> String {
 }
 
 pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases]) -> String {
-    content_div(html! {
+    content_div(maud! {
         div class="max-w-4xl mx-auto px-6 py-10" {
             div class="flex items-start justify-between gap-6" {
                 div {
@@ -125,7 +125,7 @@ pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases
 }
 
 pub fn error_fragment(message: String) -> String {
-    content_div(html! {
+    content_div(maud! {
         div class="max-w-2xl mx-auto px-6 py-12" {
             div class="bg-white shadow rounded-lg p-8" {
                 h1 class="text-2xl font-bold text-gray-900" { "Error" }
@@ -139,7 +139,7 @@ pub fn error_fragment(message: String) -> String {
 pub fn error_page(message: String) -> String {
     page(
         "Error",
-        html! {
+        maud! {
             div class="min-h-screen bg-gray-50 flex items-center justify-center" {
                 div class="max-w-xl w-full px-6" {
                     div class="bg-white shadow rounded-lg p-8" {
@@ -153,9 +153,9 @@ pub fn error_page(message: String) -> String {
     )
 }
 
-fn page(title: &str, body: Markup) -> String {
-    html! {
-        (DOCTYPE)
+fn page(title: &str, body: impl Renderable) -> String {
+    maud! {
+        !DOCTYPE
         html lang="en" {
             head {
                 meta charset="utf-8";
@@ -167,15 +167,16 @@ fn page(title: &str, body: Markup) -> String {
             body { (body) }
         }
     }
-    .into_string()
+    .render()
+    .into_inner()
 }
 
-fn content_div(inner: Markup) -> String {
-    html! { div id="content" { (inner) } }.into_string()
+fn content_div(inner: impl Renderable) -> String {
+    maud! { div id="content" { (inner) } }.render().into_inner()
 }
 
-fn film_card(film: &FilmWithReleases) -> Markup {
-    html! {
+fn film_card(film: &FilmWithReleases) -> impl Renderable + '_ {
+    maud! {
         div class="bg-white shadow rounded-lg p-6" {
             div class="flex items-start justify-between gap-4" {
                 div {
@@ -199,13 +200,17 @@ fn film_card(film: &FilmWithReleases) -> Markup {
     }
 }
 
-fn release_list(label: &str, releases: &[ReleaseDate], kind: ReleaseType) -> Markup {
+fn release_list<'a>(
+    label: &'a str,
+    releases: &'a [ReleaseDate],
+    kind: ReleaseType,
+) -> impl Renderable + 'a {
     let border = match kind {
         ReleaseType::Theatrical => "border-purple-500",
         ReleaseType::Digital => "border-blue-500",
     };
 
-    html! {
+    maud! {
         div class=(format!("border-l-4 {} pl-4", border)) {
             h3 class="text-sm font-semibold text-gray-700" { (label) }
             @if releases.is_empty() {
@@ -230,10 +235,10 @@ fn format_date(rel: &ReleaseDate) -> String {
     rel.date.strftime("%Y-%m-%d").to_string()
 }
 
-fn country_selector_script() -> Markup {
-    html! {
+fn country_selector_script() -> impl Renderable {
+    maud! {
         script {
-            (PreEscaped(r#"
+            (Raw::dangerously_create(r#"
                 function selectCountry(code, name) {
                     document.getElementById('country').value = code;
                     document.getElementById('country-search').value = name;

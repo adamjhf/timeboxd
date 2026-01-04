@@ -9,8 +9,8 @@ axum = { version = "0.8", features = ["macros", "form"] }
 dotenvy = "0.15"
 futures = "0.3"
 governor = "0.8"
+hypertext = { version = "0.12", features = ["axum"] }
 jiff = { version = "0.2", features = ["serde"] }
-maud = "0.26"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip", "brotli", "deflate"] }
 scraper = "0.22"
 sea-orm = { version = "1", features = ["runtime-tokio-rustls", "sqlx-sqlite", "macros"] }
