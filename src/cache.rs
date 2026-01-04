@@ -160,6 +160,18 @@ impl CacheManager {
         Ok(())
     }
 
+    pub async fn clear_mock_release_dates(&self) -> AppResult<()> {
+        // Delete release dates that contain "Mock" in the note field
+        release_cache::Entity::delete_many()
+            .filter(release_cache::Column::Note.contains("Mock"))
+            .exec(&self.db)
+            .await?;
+
+        // Also clean up orphaned meta records
+        // This is a simple cleanup - in production you might want more sophisticated logic
+        Ok(())
+    }
+
     fn is_fresh(&self, cached_at: i64) -> bool {
         now_sec().saturating_sub(cached_at) <= self.ttl_seconds
     }

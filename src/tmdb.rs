@@ -5,7 +5,7 @@ use governor::{
     clock::DefaultClock,
     state::{InMemoryState, NotKeyed},
 };
-use jiff::civil::Date;
+use jiff::{civil::Date, fmt::temporal::DateTimeParser};
 use serde::Deserialize;
 
 use crate::{
@@ -15,21 +15,26 @@ use crate::{
 
 pub struct TmdbClient {
     client: reqwest::Client,
-    api_key: String,
+    access_token: String,
     base_url: String,
     limiter: Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>,
 }
 
 impl TmdbClient {
-    pub fn new(client: reqwest::Client, api_key: String, base_url: String, rps: u32) -> Self {
+    pub fn new(client: reqwest::Client, access_token: String, base_url: String, rps: u32) -> Self {
+        // Warn once on app load if using mock data
+        if access_token.trim().is_empty() {
+            tracing::warn!("Using mock TMDB data - no TMDB_ACCESS_TOKEN provided");
+        }
+
         let limiter =
             Arc::new(RateLimiter::direct(Quota::per_second(NonZeroU32::new(rps.max(1)).unwrap())));
-        Self { client, api_key, base_url, limiter }
+        Self { client, access_token, base_url, limiter }
     }
 
     pub async fn search_movie(&self, title: &str, year: Option<i16>) -> AppResult<Option<i32>> {
-        // Use mock data if API key is not provided
-        if self.api_key.trim().is_empty() {
+        // Use mock data if access token is not provided
+        if self.access_token.trim().is_empty() {
             return Ok(Some(550)); // Mock TMDB ID for Fight Club
         }
 
@@ -39,7 +44,8 @@ impl TmdbClient {
         let mut req = self
             .client
             .get(url)
-            .query(&[("api_key", &self.api_key), ("query", &title.to_string())]);
+            .bearer_auth(&self.access_token)
+            .query(&[("query", &title.to_string())]);
         if let Some(year) = year {
             req = req.query(&[("year", year)]);
         }
@@ -53,8 +59,8 @@ impl TmdbClient {
         tmdb_id: i32,
         country: &str,
     ) -> AppResult<(Vec<ReleaseDate>, Vec<ReleaseDate>)> {
-        // Use mock data if API key is not provided
-        if self.api_key.trim().is_empty() {
+        // Use mock data if access token is not provided
+        if self.access_token.trim().is_empty() {
             let today: Date = jiff::Zoned::now().into();
             let future_date = today + jiff::Span::new().years(1); // 1 year from now
 
@@ -81,7 +87,7 @@ impl TmdbClient {
         let resp: ReleaseDatesResponse = self
             .client
             .get(url)
-            .query(&[("api_key", &self.api_key)])
+            .bearer_auth(&self.access_token)
             .send()
             .await?
             .error_for_status()?
@@ -101,7 +107,9 @@ impl TmdbClient {
                 let Some(kind) = ReleaseType::from_tmdb_code(rd.type_) else {
                     continue;
                 };
-                let date: Date = rd.release_date.parse()?;
+                let timestamp =
+                    DateTimeParser::new().parse_timestamp(rd.release_date.as_bytes())?;
+                let date: Date = timestamp.to_zoned(jiff::tz::TimeZone::UTC).date();
                 if date < today {
                     continue;
                 }

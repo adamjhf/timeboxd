@@ -109,11 +109,6 @@ fn split_trailing_year(title: &str) -> Option<(&str, Option<i16>)> {
 
 #[derive(Debug, Deserialize)]
 pub struct LetterboxdFilmJson {
-    pub film: LetterboxdFilmJsonFilm,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct LetterboxdFilmJsonFilm {
     pub name: String,
     #[serde(rename = "releaseYear")]
     pub release_year: Option<i16>,
@@ -135,17 +130,27 @@ pub async fn fetch_letterboxd_film_json(
     tracing::debug!(slug = %slug, url = %url, "fetching Letterboxd JSON");
     let resp = client.get(&url).send().await?.error_for_status()?;
 
-    // Check content type to avoid parsing HTML as JSON
     if let Some(content_type) = resp.headers().get("content-type") {
         if let Ok(ct) = content_type.to_str() {
-            if !ct.contains("application/json") {
+            if !ct.contains("application/json")
+                && !ct.contains("text/json")
+                && !ct.contains("+json")
+            {
                 tracing::debug!(slug = %slug, content_type = %ct, "not JSON response, skipping");
                 return Err(anyhow::anyhow!("not JSON response").into());
             }
         }
     }
 
-    let json = resp.json().await?;
+    let text = resp.text().await?;
+
+    if text.trim_start().starts_with('<') {
+        tracing::debug!(slug = %slug, "response appears to be HTML, not JSON");
+        return Err(anyhow::anyhow!("HTML response instead of JSON").into());
+    }
+
+    let json =
+        serde_json::from_str(&text).map_err(|e| anyhow::anyhow!("failed to parse JSON: {}", e))?;
     tracing::debug!(slug = %slug, "successfully fetched Letterboxd JSON");
     Ok(json)
 }

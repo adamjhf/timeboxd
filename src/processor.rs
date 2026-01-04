@@ -52,9 +52,17 @@ pub async fn process(
                     } else {
                         let fetched = tmdb.get_release_dates(tmdb_id, country).await?;
                         tracing::debug!(slug = %film.letterboxd_slug, theatrical_count = fetched.0.len(), streaming_count = fetched.1.len(), "fetched release dates");
-                        cache
-                            .put_releases(tmdb_id, country, &fetched.0, &fetched.1)
-                            .await?;
+
+                        // Don't cache mock release dates (identified by "Mock" in notes)
+                        let has_mock_data = fetched.0.iter().any(|r| r.note.as_ref().map_or(false, |n| n.contains("Mock")))
+                            || fetched.1.iter().any(|r| r.note.as_ref().map_or(false, |n| n.contains("Mock")));
+
+                        if !has_mock_data {
+                            cache
+                                .put_releases(tmdb_id, country, &fetched.0, &fetched.1)
+                                .await?;
+                        }
+
                         fetched
                     };
 
@@ -116,7 +124,7 @@ async fn resolve_tmdb_id(
     {
         Ok(json) => {
             let mut tmdb_id_from_json = None;
-            if let Some(links) = json.film.links {
+            if let Some(links) = json.links {
                 for link in links {
                     if link.kind == "tmdb" {
                         if let Some(id) = link.id.and_then(|s| s.parse().ok()) {
@@ -127,7 +135,7 @@ async fn resolve_tmdb_id(
                     }
                 }
             }
-            (json.film.name, json.film.release_year.or(year), tmdb_id_from_json)
+            (json.name, json.release_year.or(year), tmdb_id_from_json)
         },
         Err(err) => {
             tracing::debug!(slug = %slug, error = %err, "failed to fetch Letterboxd JSON, will use fallback title");
