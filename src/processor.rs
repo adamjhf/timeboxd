@@ -117,29 +117,19 @@ async fn resolve_tmdb_id(
         }
     }
 
-    let (resolved_title, resolved_year, mut tmdb_id) = match scraper::fetch_letterboxd_film_json(
+    let (resolved_title, resolved_year, mut tmdb_id) = match scraper::fetch_letterboxd_film_data(
         http, slug,
     )
     .await
     {
-        Ok(json) => {
-            let mut tmdb_id_from_json = None;
-            if let Some(links) = json.links {
-                for link in links {
-                    if link.kind == "tmdb" {
-                        if let Some(id) = link.id.and_then(|s| s.parse().ok()) {
-                            tmdb_id_from_json = Some(id);
-                            tracing::debug!(slug = %slug, tmdb_id = id, "found TMDB ID in Letterboxd JSON");
-                            break;
-                        }
-                    }
-                }
+        Ok(data) => {
+            if let Some(id) = data.tmdb_id {
+                tracing::debug!(slug = %slug, tmdb_id = id, "found TMDB ID from Letterboxd");
             }
-            (json.name, json.release_year.or(year), tmdb_id_from_json)
+            (data.title, data.year.or(year), data.tmdb_id)
         },
         Err(err) => {
-            tracing::debug!(slug = %slug, error = %err, "failed to fetch Letterboxd JSON, will use fallback title");
-            // Fallback: use the slug as title (convert kebab-case to title case)
+            tracing::debug!(slug = %slug, error = %err, "failed to fetch Letterboxd data, will use fallback title");
             let fallback_title = slug
                 .split('-')
                 .map(|word| {

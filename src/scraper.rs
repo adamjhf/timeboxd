@@ -1,7 +1,6 @@
 use std::{collections::HashSet, time::Duration};
 
 use scraper::{Html, Selector};
-use serde::Deserialize;
 
 use crate::{error::AppResult, models::WishlistFilm};
 
@@ -107,50 +106,74 @@ fn split_trailing_year(title: &str) -> Option<(&str, Option<i16>)> {
     Some((&s[..open], year))
 }
 
-#[derive(Debug, Deserialize)]
-pub struct LetterboxdFilmJson {
-    pub name: String,
-    #[serde(rename = "releaseYear")]
-    pub release_year: Option<i16>,
-    pub links: Option<Vec<LetterboxdFilmJsonLink>>,
+pub struct LetterboxdFilmData {
+    pub title: String,
+    pub year: Option<i16>,
+    pub tmdb_id: Option<i32>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct LetterboxdFilmJsonLink {
-    #[serde(rename = "type")]
-    pub kind: String,
-    pub id: Option<String>,
-}
-
-pub async fn fetch_letterboxd_film_json(
+pub async fn fetch_letterboxd_film_data(
     client: &reqwest::Client,
     slug: &str,
-) -> AppResult<LetterboxdFilmJson> {
-    let url = format!("https://letterboxd.com/film/{}/json/", slug);
-    tracing::debug!(slug = %slug, url = %url, "fetching Letterboxd JSON");
-    let resp = client.get(&url).send().await?.error_for_status()?;
+) -> AppResult<LetterboxdFilmData> {
+    let url = format!("https://letterboxd.com/film/{}/", slug);
+    tracing::debug!(slug = %slug, url = %url, "fetching Letterboxd film page");
+    let html = client.get(&url).send().await?.error_for_status()?.text().await?;
 
-    if let Some(content_type) = resp.headers().get("content-type") {
-        if let Ok(ct) = content_type.to_str() {
-            if !ct.contains("application/json")
-                && !ct.contains("text/json")
-                && !ct.contains("+json")
-            {
-                tracing::debug!(slug = %slug, content_type = %ct, "not JSON response, skipping");
-                return Err(anyhow::anyhow!("not JSON response").into());
+    let doc = Html::parse_document(&html);
+
+    let body_selector = Selector::parse("body").unwrap();
+    let body = doc.select(&body_selector).next().ok_or_else(|| anyhow::anyhow!("no body tag"))?;
+
+    let mut tmdb_id = body
+        .value()
+        .attr("data-tmdb-id")
+        .filter(|id| !id.is_empty())
+        .and_then(|id| id.parse::<i32>().ok());
+
+    if tmdb_id.is_none() {
+        let tmdb_link_selector = Selector::parse("a[href*='themoviedb.org']").unwrap();
+        if let Some(link) = doc.select(&tmdb_link_selector).next() {
+            if let Some(href) = link.value().attr("href") {
+                if let Some(id) = extract_tmdb_id_from_url(href) {
+                    tracing::debug!(slug = %slug, tmdb_id = id, "extracted TMDB ID from link");
+                    tmdb_id = Some(id);
+                }
             }
         }
     }
 
-    let text = resp.text().await?;
+    let og_title_selector = Selector::parse("meta[property='og:title']").unwrap();
+    let title_with_year = doc
+        .select(&og_title_selector)
+        .next()
+        .and_then(|el| el.value().attr("content"))
+        .ok_or_else(|| anyhow::anyhow!("no og:title meta tag"))?;
 
-    if text.trim_start().starts_with('<') {
-        tracing::debug!(slug = %slug, "response appears to be HTML, not JSON");
-        return Err(anyhow::anyhow!("HTML response instead of JSON").into());
+    let (title, year) = parse_title_and_year(title_with_year);
+
+    tracing::debug!(slug = %slug, title = %title, year = ?year, tmdb_id = ?tmdb_id, "parsed Letterboxd film data");
+
+    Ok(LetterboxdFilmData { title: title.to_string(), year, tmdb_id })
+}
+
+fn extract_tmdb_id_from_url(url: &str) -> Option<i32> {
+    if let Some(movie_pos) = url.find("/movie/") {
+        let after_movie = &url[movie_pos + 7..];
+        return after_movie.split('/').next().and_then(|id| id.parse().ok());
     }
+    if let Some(tv_pos) = url.find("/tv/") {
+        let after_tv = &url[tv_pos + 4..];
+        return after_tv.split('/').next().and_then(|id| id.parse().ok());
+    }
+    None
+}
 
-    let json =
-        serde_json::from_str(&text).map_err(|e| anyhow::anyhow!("failed to parse JSON: {}", e))?;
-    tracing::debug!(slug = %slug, "successfully fetched Letterboxd JSON");
-    Ok(json)
+fn parse_title_and_year(title_with_year: &str) -> (&str, Option<i16>) {
+    let trimmed = title_with_year.trim();
+    if let Some((title, year_part)) = split_trailing_year(trimmed) {
+        (title.trim(), year_part)
+    } else {
+        (trimmed, None)
+    }
 }
