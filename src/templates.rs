@@ -1,6 +1,9 @@
 use maud::{DOCTYPE, Markup, PreEscaped, html};
 
-use crate::models::{FilmWithReleases, ReleaseDate, ReleaseType};
+use crate::{
+    countries::COUNTRIES,
+    models::{FilmWithReleases, ReleaseDate, ReleaseType},
+};
 
 const TAILWIND_CDN: &str = "https://cdn.tailwindcss.com";
 const DATASTAR_CDN: &str =
@@ -23,13 +26,37 @@ pub fn index_page() -> String {
                             }
 
                             div {
-                                label class="block text-sm font-medium text-gray-700" for="country" { "Country code" }
-                                input class="mt-2 w-full rounded-md border border-gray-300 px-3 py-2 uppercase focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" name="country" id="country" minlength="2" maxlength="2" pattern="[A-Za-z]{2}" required;
-                                p class="mt-2 text-xs text-gray-500" { "Use ISO 3166-1 alpha-2 (e.g. US, GB, AU)." }
+                                label class="block text-sm font-medium text-gray-700" for="country-search" { "Country" }
+                                div class="relative mt-2" {
+                                    input
+                                        type="text"
+                                        id="country-search"
+                                        autocomplete="off"
+                                        placeholder="Search countries..."
+                                        class="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                        onkeyup="filterCountries()"
+                                        onfocus="document.getElementById('country-dropdown').classList.remove('hidden')"
+                                        ;
+                                    input type="hidden" name="country" id="country" required;
+                                    div id="country-dropdown" class="hidden absolute z-10 mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto" {
+                                        @for country in COUNTRIES {
+                                            div
+                                                class="country-option px-3 py-2 hover:bg-blue-50 cursor-pointer"
+                                                data-code=(country.code)
+                                                data-name=(country.name)
+                                                onclick=(format!("selectCountry('{}', '{}')", country.code, country.name))
+                                            {
+                                                (country.name) " (" (country.code) ")"
+                                            }
+                                        }
+                                    }
+                                }
+                                p class="mt-2 text-xs text-gray-500" { "Select a country to see release dates for that region." }
                             }
 
                             button class="w-full rounded-md bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700" type="submit" { "Track" }
                         }
+                        (country_selector_script())
                     }
                 }
             }
@@ -201,4 +228,49 @@ fn release_list(label: &str, releases: &[ReleaseDate], kind: ReleaseType) -> Mar
 
 fn format_date(rel: &ReleaseDate) -> String {
     rel.date.strftime("%Y-%m-%d").to_string()
+}
+
+fn country_selector_script() -> Markup {
+    html! {
+        script {
+            (PreEscaped(r#"
+                function selectCountry(code, name) {
+                    document.getElementById('country').value = code;
+                    document.getElementById('country-search').value = name;
+                    document.getElementById('country-dropdown').classList.add('hidden');
+                }
+
+                function filterCountries() {
+                    const input = document.getElementById('country-search');
+                    const filter = input.value.toLowerCase();
+                    const dropdown = document.getElementById('country-dropdown');
+                    const options = dropdown.getElementsByClassName('country-option');
+
+                    let hasVisible = false;
+                    for (let i = 0; i < options.length; i++) {
+                        const name = options[i].getAttribute('data-name').toLowerCase();
+                        const code = options[i].getAttribute('data-code').toLowerCase();
+                        if (name.includes(filter) || code.includes(filter)) {
+                            options[i].style.display = '';
+                            hasVisible = true;
+                        } else {
+                            options[i].style.display = 'none';
+                        }
+                    }
+
+                    if (hasVisible) {
+                        dropdown.classList.remove('hidden');
+                    }
+                }
+
+                document.addEventListener('click', function(event) {
+                    const dropdown = document.getElementById('country-dropdown');
+                    const searchInput = document.getElementById('country-search');
+                    if (dropdown && searchInput && !dropdown.contains(event.target) && event.target !== searchInput) {
+                        dropdown.classList.add('hidden');
+                    }
+                });
+            "#))
+        }
+    }
 }
