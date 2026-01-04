@@ -33,6 +33,6 @@
     TMDB_RPS = "4";
     MAX_CONCURRENT_REQUESTS = "5";
     LETTERBOXD_DELAY_MS = "250";
-    RUST_LOG = "info,timeboxd=debug";
+    RUST_LOG = "debug";
   };
 }
