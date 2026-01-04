@@ -72,7 +72,7 @@ fn parse_watchlist_page(html: &str) -> AppResult<Vec<WishlistFilm>> {
 
         tracing::debug!(slug = %slug, title = %title, year = ?year, "found film in watchlist");
 
-        out.push(WishlistFilm { letterboxd_slug: slug.to_string(), title, year, tmdb_id: None });
+        out.push(WishlistFilm { letterboxd_slug: slug.to_string(), year });
     }
 
     tracing::debug!(film_count = out.len(), "parsed films from page");

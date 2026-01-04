@@ -4,9 +4,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug)]
 pub struct WishlistFilm {
     pub letterboxd_slug: String,
-    pub title: String,
     pub year: Option<i16>,
-    pub tmdb_id: Option<i32>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
