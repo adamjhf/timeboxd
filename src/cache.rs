@@ -14,10 +14,7 @@ pub struct CacheManager {
 
 impl CacheManager {
     pub fn new(db: DatabaseConnection, ttl_days: i64) -> Self {
-        Self {
-            db,
-            ttl_seconds: ttl_days * 86_400,
-        }
+        Self { db, ttl_seconds: ttl_days * 86_400 }
     }
 
     pub fn db(&self) -> &DatabaseConnection {
@@ -25,9 +22,7 @@ impl CacheManager {
     }
 
     pub async fn get_film(&self, slug: &str) -> AppResult<Option<film_cache::Model>> {
-        let film = film_cache::Entity::find_by_id(slug.to_string())
-            .one(&self.db)
-            .await?;
+        let film = film_cache::Entity::find_by_id(slug.to_string()).one(&self.db).await?;
         Ok(film.filter(|f| self.is_fresh(f.updated_at)))
     }
 
@@ -98,11 +93,7 @@ impl CacheManager {
             let Some(kind) = ReleaseType::from_tmdb_code(row.release_type) else {
                 continue;
             };
-            let rd = ReleaseDate {
-                date,
-                release_type: kind,
-                note: row.note,
-            };
+            let rd = ReleaseDate { date, release_type: kind, note: row.note };
             match kind {
                 ReleaseType::Theatrical => theatrical.push(rd),
                 ReleaseType::Digital => streaming.push(rd),

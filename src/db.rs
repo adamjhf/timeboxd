@@ -16,11 +16,7 @@ async fn run_sql(db: &DatabaseConnection, sql: &str) -> AppResult<()> {
         if stmt.is_empty() {
             continue;
         }
-        db.execute(Statement::from_string(
-            db.get_database_backend(),
-            stmt.to_string(),
-        ))
-        .await?;
+        db.execute(Statement::from_string(db.get_database_backend(), stmt.to_string())).await?;
     }
     Ok(())
 }

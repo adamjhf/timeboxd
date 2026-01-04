@@ -53,12 +53,7 @@ async fn main() -> anyhow::Result<()> {
         config.tmdb_rps,
     );
 
-    let state = Arc::new(AppState {
-        config: config.clone(),
-        http,
-        cache,
-        tmdb: Arc::new(tmdb),
-    });
+    let state = Arc::new(AppState { config: config.clone(), http, cache, tmdb: Arc::new(tmdb) });
 
     let app = Router::new()
         .route("/", get(routes::index))

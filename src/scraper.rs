@@ -11,6 +11,8 @@ pub async fn fetch_watchlist(
     delay_ms: u64,
     cutoff_year: i16,
 ) -> AppResult<Vec<WishlistFilm>> {
+    tracing::debug!(username = %username, cutoff_year = cutoff_year, "starting watchlist fetch");
+
     let mut out = Vec::new();
     let mut seen = HashSet::new();
 
@@ -20,28 +22,21 @@ pub async fn fetch_watchlist(
         let url = if page == 1 {
             format!("https://letterboxd.com/{}/watchlist/by/release/", username)
         } else {
-            format!(
-                "https://letterboxd.com/{}/watchlist/by/release/page/{}/",
-                username, page
-            )
+            format!("https://letterboxd.com/{}/watchlist/by/release/page/{}/", username, page)
         };
 
-        let html = client
-            .get(url)
-            .send()
-            .await?
-            .error_for_status()?
-            .text()
-            .await?;
+        tracing::debug!(page = page, url = %url, "fetching watchlist page");
+        let html = client.get(&url).send().await?.error_for_status()?.text().await?;
+        tracing::debug!(page = page, html_len = html.len(), "fetched HTML");
 
         let films = parse_watchlist_page(&html)?;
+        tracing::debug!(page = page, films_found = films.len(), "parsed films from page");
+
         if films.is_empty() {
             break;
         }
 
-        let all_old = films
-            .iter()
-            .all(|f| f.year.map(|y| y < cutoff_year).unwrap_or(false));
+        let all_old = films.iter().all(|f| f.year.map(|y| y < cutoff_year).unwrap_or(false));
 
         for film in films {
             if seen.insert(film.letterboxd_slug.clone()) {
@@ -57,6 +52,7 @@ pub async fn fetch_watchlist(
         tokio::time::sleep(Duration::from_millis(delay_ms)).await;
     }
 
+    tracing::debug!(total_films = out.len(), "completed watchlist fetch");
     Ok(out)
 }
 
@@ -75,14 +71,12 @@ fn parse_watchlist_page(html: &str) -> AppResult<Vec<WishlistFilm>> {
         let year = parse_year_from_title(title);
         let title = strip_trailing_year(title);
 
-        out.push(WishlistFilm {
-            letterboxd_slug: slug.to_string(),
-            title,
-            year,
-            tmdb_id: None,
-        });
+        tracing::debug!(slug = %slug, title = %title, year = ?year, "found film in watchlist");
+
+        out.push(WishlistFilm { letterboxd_slug: slug.to_string(), title, year, tmdb_id: None });
     }
 
+    tracing::debug!(film_count = out.len(), "parsed films from page");
     Ok(out)
 }
 
@@ -123,7 +117,7 @@ pub struct LetterboxdFilmJsonFilm {
     pub name: String,
     #[serde(rename = "releaseYear")]
     pub release_year: Option<i16>,
-    pub links: Vec<LetterboxdFilmJsonLink>,
+    pub links: Option<Vec<LetterboxdFilmJsonLink>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -138,11 +132,20 @@ pub async fn fetch_letterboxd_film_json(
     slug: &str,
 ) -> AppResult<LetterboxdFilmJson> {
     let url = format!("https://letterboxd.com/film/{}/json/", slug);
-    Ok(client
-        .get(url)
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?)
+    tracing::debug!(slug = %slug, url = %url, "fetching Letterboxd JSON");
+    let resp = client.get(&url).send().await?.error_for_status()?;
+
+    // Check content type to avoid parsing HTML as JSON
+    if let Some(content_type) = resp.headers().get("content-type") {
+        if let Ok(ct) = content_type.to_str() {
+            if !ct.contains("application/json") {
+                tracing::debug!(slug = %slug, content_type = %ct, "not JSON response, skipping");
+                return Err(anyhow::anyhow!("not JSON response").into());
+            }
+        }
+    }
+
+    let json = resp.json().await?;
+    tracing::debug!(slug = %slug, "successfully fetched Letterboxd JSON");
+    Ok(json)
 }

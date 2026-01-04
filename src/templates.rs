@@ -48,7 +48,7 @@ pub fn processing_page(username: &str, country: &str) -> String {
         "Processing",
         html! {
             div class="min-h-screen bg-gray-50 flex items-center justify-center" {
-                div id="content" class="max-w-xl w-full px-6" data-indicator:fetching data-init=(PreEscaped(format!("@get('{}')", url))) {
+                div id="content" class="max-w-xl w-full px-6" {
                     div class="bg-white shadow rounded-lg p-8 text-center" {
                         div class="mx-auto h-12 w-12 rounded-full border-4 border-blue-200 border-t-blue-600 animate-spin" {};
                         h1 class="mt-6 text-xl font-semibold text-gray-900" { "Processing" }
@@ -57,6 +57,16 @@ pub fn processing_page(username: &str, country: &str) -> String {
                     }
                 }
             }
+            script { (PreEscaped(format!("
+                fetch('{}')
+                    .then(response => response.text())
+                    .then(html => {{
+                        document.getElementById('content').innerHTML = html;
+                    }})
+                    .catch(error => {{
+                        document.getElementById('content').innerHTML = '<div class=\"bg-white shadow rounded-lg p-8\"><h1 class=\"text-2xl font-bold text-gray-900\">Error</h1><p class=\"mt-4 text-gray-700\">' + error.message + '</p></div>';
+                    }});
+            ", url))) }
         },
     )
 }
