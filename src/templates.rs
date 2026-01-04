@@ -1,7 +1,7 @@
 use hypertext::{Raw, maud, prelude::*};
 
 use crate::{
-    countries::COUNTRIES,
+    countries::{COUNTRIES, get_country_name},
     models::{FilmWithReleases, ReleaseDate, ReleaseType},
 };
 
@@ -99,12 +99,13 @@ pub fn processing_page(username: &str, country: &str) -> String {
 }
 
 pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases]) -> String {
+    let country_name = get_country_name(country);
     content_div(maud! {
         div class="max-w-4xl mx-auto px-6 py-10" {
             div class="flex items-start justify-between gap-6" {
                 div {
                     h1 class="text-3xl font-bold text-gray-900" { "Upcoming releases" }
-                    p class="mt-2 text-gray-600" { "@" (username) " · " (country) }
+                    p class="mt-2 text-gray-600" { "@" (username) " · " (country_name) }
                 }
                 a class="text-sm text-blue-600 hover:text-blue-800" href="/" { "New search" }
             }

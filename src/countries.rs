@@ -60,3 +60,7 @@ pub const COUNTRIES: &[Country] = &[
     Country { code: "AE", name: "United Arab Emirates" },
     Country { code: "GB", name: "United Kingdom" },
 ];
+
+pub fn get_country_name(code: &str) -> &str {
+    COUNTRIES.iter().find(|c| c.code.eq_ignore_ascii_case(code)).map(|c| c.name).unwrap_or(code)
+}
