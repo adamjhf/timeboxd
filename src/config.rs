@@ -5,7 +5,7 @@ use anyhow::Context;
 #[derive(Clone, Debug)]
 pub struct Config {
     pub addr: SocketAddr,
-    pub tmdb_api_key: String,
+    pub tmdb_access_token: String,
     pub tmdb_base_url: String,
     pub database_url: String,
     pub cache_ttl_days: i64,
@@ -22,7 +22,8 @@ impl Config {
         let port: u16 =
             std::env::var("PORT").unwrap_or_else(|_| "3000".to_string()).parse().context("PORT")?;
 
-        let tmdb_api_key = std::env::var("TMDB_API_KEY").unwrap_or_else(|_| "".to_string());
+        let tmdb_access_token =
+            std::env::var("TMDB_ACCESS_TOKEN").unwrap_or_else(|_| "".to_string());
         let tmdb_base_url = std::env::var("TMDB_BASE_URL")
             .unwrap_or_else(|_| "https://api.themoviedb.org/3".to_string());
 
@@ -43,7 +44,7 @@ impl Config {
 
         Ok(Self {
             addr: format!("{host}:{port}").parse().context("HOST/PORT")?,
-            tmdb_api_key,
+            tmdb_access_token,
             tmdb_base_url,
             database_url,
             cache_ttl_days,

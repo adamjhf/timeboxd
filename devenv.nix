@@ -1,4 +1,5 @@
 {
+  config,
   pkgs,
   ...
 }:
@@ -7,6 +8,7 @@
     pkgs.git
     pkgs.sqlite
     pkgs.sea-orm-cli
+    pkgs.secretspec
   ];
 
   languages.rust = {
@@ -26,6 +28,7 @@
   };
 
   env = {
+    TMDB_ACCESS_TOKEN = config.secretspec.secrets.TMDB_ACCESS_TOKEN;
     TMDB_BASE_URL = "https://api.themoviedb.org/3";
     DATABASE_URL = "sqlite://timeboxd.db?mode=rwc";
     CACHE_TTL_DAYS = "7";

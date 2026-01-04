@@ -49,7 +49,7 @@ async fn main() -> anyhow::Result<()> {
 
     let tmdb = TmdbClient::new(
         http.clone(),
-        config.tmdb_api_key.clone(),
+        config.tmdb_access_token.clone(),
         config.tmdb_base_url.clone(),
         config.tmdb_rps,
     );
