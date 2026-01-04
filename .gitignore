@@ -8,3 +8,16 @@ devenv.local.yaml
 
 # pre-commit
 .pre-commit-config.yaml
+
+# Rust
+/target
+Cargo.lock
+
+# Local config
+.env
+.env.*
+
+# SQLite
+*.db
+*.db-shm
+*.db-wal
