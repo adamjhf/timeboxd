@@ -103,7 +103,7 @@ fn split_trailing_year(title: &str) -> Option<(&str, Option<i16>)> {
         return Some((s, None));
     }
     let year = inside.parse().ok();
-    Some((&s[..open], year))
+    Some((&s[..open].trim_end(), year))
 }
 
 pub struct LetterboxdFilmData {
