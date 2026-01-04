@@ -41,8 +41,11 @@ async fn main() -> anyhow::Result<()> {
     let config = Arc::new(Config::from_env()?);
 
     let http = reqwest::Client::builder()
-        .user_agent("timeboxd/0.1")
-        .timeout(Duration::from_secs(30))
+        .user_agent(
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like \
+             Gecko) Chrome/131.0.0.0 Safari/537.36",
+        )
+        .timeout(Duration::from_secs(10))
         .build()?;
 
     let db = db::connect_and_migrate(&config.database_url).await?;
