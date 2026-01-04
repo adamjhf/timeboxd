@@ -96,8 +96,10 @@ impl TmdbClient {
 
         let today: Date = jiff::Zoned::now().into();
 
-        let mut theatrical = Vec::new();
-        let mut streaming = Vec::new();
+        let mut theatrical_future = Vec::new();
+        let mut streaming_future = Vec::new();
+        let mut theatrical_past = Vec::new();
+        let mut streaming_past = Vec::new();
 
         for res in resp.results {
             if res.iso_3166_1 != country {
@@ -110,26 +112,67 @@ impl TmdbClient {
                 let timestamp =
                     DateTimeParser::new().parse_timestamp(rd.release_date.as_bytes())?;
                 let date: Date = timestamp.to_zoned(jiff::tz::TimeZone::UTC).date();
-                if date < today {
-                    continue;
-                }
                 let note = rd.note.and_then(|s| {
                     let s = s.trim();
                     (!s.is_empty()).then(|| s.to_string())
                 });
                 let out = ReleaseDate { date, release_type: kind, note };
-                match kind {
-                    ReleaseType::Theatrical => theatrical.push(out),
-                    ReleaseType::Digital => streaming.push(out),
+
+                if date >= today {
+                    match kind {
+                        ReleaseType::Theatrical => theatrical_future.push(out),
+                        ReleaseType::Digital => streaming_future.push(out),
+                    }
+                } else {
+                    match kind {
+                        ReleaseType::Theatrical => theatrical_past.push(out),
+                        ReleaseType::Digital => streaming_past.push(out),
+                    }
                 }
             }
         }
 
-        theatrical.sort_by_key(|r| r.date);
-        streaming.sort_by_key(|r| r.date);
+        theatrical_future.sort_by_key(|r| r.date);
+        streaming_future.sort_by_key(|r| r.date);
+        theatrical_past.sort_by_key(|r| r.date);
+        streaming_past.sort_by_key(|r| r.date);
 
-        theatrical.dedup_by_key(|r| (r.date, r.release_type.as_tmdb_code(), r.note.clone()));
-        streaming.dedup_by_key(|r| (r.date, r.release_type.as_tmdb_code(), r.note.clone()));
+        theatrical_future.dedup_by_key(|r| (r.date, r.release_type.as_tmdb_code(), r.note.clone()));
+        streaming_future.dedup_by_key(|r| (r.date, r.release_type.as_tmdb_code(), r.note.clone()));
+
+        let has_future_theatrical = !theatrical_future.is_empty();
+        let has_future_streaming = !streaming_future.is_empty();
+        let has_past_theatrical = !theatrical_past.is_empty();
+        let has_past_streaming = !streaming_past.is_empty();
+
+        let mut theatrical = theatrical_future;
+        let mut streaming = streaming_future;
+
+        if (has_future_theatrical || has_future_streaming)
+            && has_past_theatrical
+            && theatrical.is_empty()
+        {
+            if let Some(latest) = theatrical_past.into_iter().max_by_key(|r| r.date) {
+                theatrical.push(ReleaseDate {
+                    date: latest.date,
+                    release_type: ReleaseType::Theatrical,
+                    note: Some("Already available".to_string()),
+                });
+            }
+        }
+
+        if (has_future_theatrical || has_future_streaming)
+            && has_past_streaming
+            && streaming.is_empty()
+        {
+            if let Some(latest) = streaming_past.into_iter().max_by_key(|r| r.date) {
+                streaming.push(ReleaseDate {
+                    date: latest.date,
+                    release_type: ReleaseType::Digital,
+                    note: Some("Already available".to_string()),
+                });
+            }
+        }
 
         Ok((theatrical, streaming))
     }
