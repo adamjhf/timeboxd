@@ -24,9 +24,6 @@ The project uses devenv with Nix for development environment management. Key com
 ```bash
 # Activate devenv environment
 devenv shell
-
-# Or use direnv (if configured)
-cd /Users/adam/GitHub/timeboxd
 ```
 
 ## Build Commands
@@ -354,7 +351,7 @@ tracing_subscriber::fmt()
 - Prefer explicit type signatures for public APIs
 - Log with `tracing` macros: `debug!`, `info!`, `error!`
 - Keep functions focused and reasonably sized
-- Avoid comments except where necessary for complex logic
+- **Comments**: Use comments sparingly and only where code is non-intuitive or complex. Prefer self-documenting code over comments. Avoid redundant comments that restate what the code obviously does
 - No documentation updates unless explicitly requested
 - No emoji unless explicitly requested
 
@@ -380,18 +377,6 @@ tracing_subscriber::fmt()
 - Use streaming for large data processing
 - Consider memory usage with large datasets
 - Profile performance-critical code paths
-
-## Commit Message Guidelines
-
-Follow conventional commit format:
-- `feat:` - New features
-- `fix:` - Bug fixes
-- `docs:` - Documentation changes
-- `refactor:` - Code refactoring
-- `test:` - Test additions/modifications
-- `chore:` - Maintenance tasks
-
-Example: `feat: add film processing pipeline`
 
 ## File Structure Conventions
 
