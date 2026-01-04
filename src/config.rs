@@ -22,7 +22,7 @@ impl Config {
         let port: u16 =
             std::env::var("PORT").unwrap_or_else(|_| "3000".to_string()).parse().context("PORT")?;
 
-        let tmdb_api_key = std::env::var("TMDB_API_KEY").context("TMDB_API_KEY")?;
+        let tmdb_api_key = std::env::var("TMDB_API_KEY").unwrap_or_else(|_| "".to_string());
         let tmdb_base_url = std::env::var("TMDB_BASE_URL")
             .unwrap_or_else(|_| "https://api.themoviedb.org/3".to_string());
 

@@ -28,8 +28,8 @@ impl TmdbClient {
     }
 
     pub async fn search_movie(&self, title: &str, year: Option<i16>) -> AppResult<Option<i32>> {
-        // For testing with dummy API key, return a mock TMDB ID
-        if self.api_key == "dummy_tmdb_api_key_for_testing" {
+        // Use mock data if API key is not provided
+        if self.api_key.trim().is_empty() {
             return Ok(Some(550)); // Mock TMDB ID for Fight Club
         }
 
@@ -53,8 +53,8 @@ impl TmdbClient {
         tmdb_id: i32,
         country: &str,
     ) -> AppResult<(Vec<ReleaseDate>, Vec<ReleaseDate>)> {
-        // For testing with dummy API key, return mock release dates
-        if self.api_key == "dummy_tmdb_api_key_for_testing" {
+        // Use mock data if API key is not provided
+        if self.api_key.trim().is_empty() {
             let today: Date = jiff::Zoned::now().into();
             let future_date = today + jiff::Span::new().years(1); // 1 year from now
 
