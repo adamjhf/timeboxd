@@ -41,12 +41,13 @@ pub fn index_page() -> String {
                                     div id="country-dropdown" class="hidden absolute z-10 mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto" {
                                         @for country in COUNTRIES {
                                             div
-                                                class="country-option px-3 py-2 hover:bg-blue-50 cursor-pointer"
+                                                class="country-option px-3 py-2 hover:bg-blue-50 cursor-pointer focus:bg-blue-100 focus:outline-none"
                                                 data-code=(country.code)
                                                 data-name=(country.name)
+                                                tabindex="-1"
                                                 onclick=(format!("selectCountry('{}', '{}')", country.code, country.name))
                                             {
-                                                (country.name) " (" (country.code) ")"
+                                                (country.name)
                                             }
                                         }
                                     }
@@ -54,7 +55,7 @@ pub fn index_page() -> String {
                                 p class="mt-2 text-xs text-gray-500" { "Select a country to see release dates for that region." }
                             }
 
-                            button class="w-full rounded-md bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700" type="submit" { "Track" }
+                            button id="submit-button" class="w-full rounded-md bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700" type="submit" { "Track" }
                         }
                         (country_selector_script())
                     }
@@ -266,10 +267,38 @@ fn country_selector_script() -> impl Renderable {
     maud! {
         script {
             (Raw::dangerously_create(r#"
+                let selectedIndex = -1;
+
                 function selectCountry(code, name) {
                     document.getElementById('country').value = code;
                     document.getElementById('country-search').value = name;
                     document.getElementById('country-dropdown').classList.add('hidden');
+                    selectedIndex = -1;
+                    document.getElementById('submit-button').focus();
+                }
+
+                function getVisibleOptions() {
+                    const dropdown = document.getElementById('country-dropdown');
+                    const options = dropdown.getElementsByClassName('country-option');
+                    const visible = [];
+                    for (let i = 0; i < options.length; i++) {
+                        if (options[i].style.display !== 'none') {
+                            visible.push(options[i]);
+                        }
+                    }
+                    return visible;
+                }
+
+                function highlightOption(index) {
+                    const visible = getVisibleOptions();
+                    visible.forEach((opt, i) => {
+                        if (i === index) {
+                            opt.classList.add('bg-blue-100');
+                            opt.scrollIntoView({ block: 'nearest' });
+                        } else {
+                            opt.classList.remove('bg-blue-100');
+                        }
+                    });
                 }
 
                 function filterCountries() {
@@ -290,16 +319,127 @@ fn country_selector_script() -> impl Renderable {
                         }
                     }
 
+                    selectedIndex = -1;
                     if (hasVisible) {
                         dropdown.classList.remove('hidden');
                     }
                 }
 
+                const searchInput = document.getElementById('country-search');
+                const dropdown = document.getElementById('country-dropdown');
+                
+                function focusOption(index) {
+                    const visible = getVisibleOptions();
+                    if (index >= 0 && index < visible.length) {
+                        visible[index].focus();
+                    }
+                }
+                
+                searchInput.addEventListener('keydown', function(e) {
+                    const isOpen = !dropdown.classList.contains('hidden');
+                    const visible = getVisibleOptions();
+                    
+                    switch(e.key) {
+                        case 'ArrowDown':
+                            e.preventDefault();
+                            if (!isOpen) {
+                                dropdown.classList.remove('hidden');
+                            }
+                            if (visible.length > 0) {
+                                selectedIndex = selectedIndex < 0 ? 0 : (selectedIndex + 1) % visible.length;
+                                highlightOption(selectedIndex);
+                                focusOption(selectedIndex);
+                            }
+                            break;
+                            
+                        case 'ArrowUp':
+                            e.preventDefault();
+                            if (!isOpen) {
+                                dropdown.classList.remove('hidden');
+                            }
+                            if (visible.length > 0) {
+                                selectedIndex = selectedIndex <= 0 ? visible.length - 1 : selectedIndex - 1;
+                                highlightOption(selectedIndex);
+                                focusOption(selectedIndex);
+                            }
+                            break;
+                            
+                        case 'Enter':
+                            if (isOpen) {
+                                e.preventDefault();
+                                if (selectedIndex >= 0 && selectedIndex < visible.length) {
+                                    const option = visible[selectedIndex];
+                                    selectCountry(option.getAttribute('data-code'), option.getAttribute('data-name'));
+                                }
+                            }
+                            break;
+                            
+                        case ' ':
+                            if (isOpen && selectedIndex >= 0) {
+                                e.preventDefault();
+                                if (selectedIndex < visible.length) {
+                                    const option = visible[selectedIndex];
+                                    selectCountry(option.getAttribute('data-code'), option.getAttribute('data-name'));
+                                }
+                            }
+                            break;
+                            
+                        case 'Escape':
+                            if (isOpen) {
+                                e.preventDefault();
+                                dropdown.classList.add('hidden');
+                                selectedIndex = -1;
+                                searchInput.focus();
+                            }
+                            break;
+                    }
+                });
+                
+                dropdown.addEventListener('keydown', function(e) {
+                    const visible = getVisibleOptions();
+                    const focusedElement = document.activeElement;
+                    const currentIndex = visible.indexOf(focusedElement);
+                    
+                    switch(e.key) {
+                        case 'ArrowDown':
+                            e.preventDefault();
+                            if (visible.length > 0) {
+                                selectedIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % visible.length;
+                                highlightOption(selectedIndex);
+                                focusOption(selectedIndex);
+                            }
+                            break;
+                            
+                        case 'ArrowUp':
+                            e.preventDefault();
+                            if (visible.length > 0) {
+                                selectedIndex = currentIndex <= 0 ? visible.length - 1 : currentIndex - 1;
+                                highlightOption(selectedIndex);
+                                focusOption(selectedIndex);
+                            }
+                            break;
+                            
+                        case 'Enter':
+                        case ' ':
+                            e.preventDefault();
+                            if (focusedElement.classList.contains('country-option')) {
+                                selectCountry(focusedElement.getAttribute('data-code'), focusedElement.getAttribute('data-name'));
+                            }
+                            break;
+                            
+                        case 'Escape':
+                            e.preventDefault();
+                            dropdown.classList.add('hidden');
+                            selectedIndex = -1;
+                            searchInput.focus();
+                            break;
+                    }
+                });
+
                 document.addEventListener('click', function(event) {
-                    const dropdown = document.getElementById('country-dropdown');
-                    const searchInput = document.getElementById('country-search');
                     if (dropdown && searchInput && !dropdown.contains(event.target) && event.target !== searchInput) {
                         dropdown.classList.add('hidden');
+                        selectedIndex = -1;
                     }
                 });
             "#))
