@@ -50,6 +50,8 @@ cargo run
 
 **IMPORTANT**: When running the application in an agent context, DO NOT use `cargo run` directly as it will block indefinitely. Instead:
 - Use background execution: `cargo run &` or `devenv shell -- cargo run &`
+- Always clean up background processes before starting new ones: `pkill -9 -f timeboxd`
+- If you get "Address already in use" error, use a different port: `PORT=3001 cargo run &`
 - For testing, build only with `cargo build` and manually start the server outside the agent
 - Never use tools that run the server in-process without background execution
 
