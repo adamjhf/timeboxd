@@ -50,7 +50,7 @@ async fn main() -> anyhow::Result<()> {
         .build()?;
 
     let db = db::connect_and_migrate(&config.database_url).await?;
-    let cache = CacheManager::new(db, config.cache_ttl_days);
+    let cache = CacheManager::new(db, config.cache_ttl_days, config.release_cache_hours);
 
     let tmdb = TmdbClient::new(
         http.clone(),

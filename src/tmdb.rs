@@ -11,7 +11,7 @@ use tracing::warn;
 
 use crate::{
     error::AppResult,
-    models::{ReleaseDate, ReleaseType},
+    models::{CountryReleases, ReleaseDate, ReleaseDatesResult, ReleaseType},
 };
 
 pub struct TmdbClient {
@@ -83,11 +83,11 @@ impl TmdbClient {
         &self,
         tmdb_id: i32,
         country: &str,
-    ) -> AppResult<(Vec<ReleaseDate>, Vec<ReleaseDate>)> {
+    ) -> AppResult<ReleaseDatesResult> {
         // Use mock data if access token is not provided
         if self.access_token.trim().is_empty() {
             let today: Date = jiff::Zoned::now().into();
-            let future_date = today + jiff::Span::new().years(1); // 1 year from now
+            let future_date = today + jiff::Span::new().years(1);
 
             let theatrical = vec![ReleaseDate {
                 date: future_date,
@@ -96,12 +96,19 @@ impl TmdbClient {
             }];
 
             let streaming = vec![ReleaseDate {
-                date: future_date + jiff::Span::new().months(3), // 3 months later
+                date: future_date + jiff::Span::new().months(3),
                 release_type: ReleaseType::Digital,
                 note: Some("Mock streaming release".to_string()),
             }];
 
-            return Ok((theatrical, streaming));
+            return Ok(ReleaseDatesResult {
+                requested_country: CountryReleases {
+                    country: country.to_string(),
+                    theatrical,
+                    streaming,
+                },
+                all_countries: vec![],
+            });
         }
 
         self.limiter.until_ready().await;
@@ -199,7 +206,14 @@ impl TmdbClient {
             }
         }
 
-        Ok((theatrical, streaming))
+        Ok(ReleaseDatesResult {
+            requested_country: CountryReleases {
+                country: country.to_string(),
+                theatrical,
+                streaming,
+            },
+            all_countries: vec![],
+        })
     }
 }
 

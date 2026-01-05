@@ -33,6 +33,7 @@
     TMDB_BASE_URL = "https://api.themoviedb.org/3";
     DATABASE_URL = "sqlite://timeboxd.db?mode=rwc";
     CACHE_TTL_DAYS = "7";
+    RELEASE_CACHE_HOURS = "24";
     TMDB_RPS = "4";
     MAX_CONCURRENT_REQUESTS = "5";
     LETTERBOXD_DELAY_MS = "250";

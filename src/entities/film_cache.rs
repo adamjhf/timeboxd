@@ -8,6 +8,7 @@ pub struct Model {
     pub tmdb_id: Option<i32>,
     pub title: String,
     pub year: Option<i32>,
+    pub poster_path: Option<String>,
     pub updated_at: i64,
 }
 

@@ -47,19 +47,20 @@ pub async fn process(
                         debug!(slug = %film.letterboxd_slug, "using cached release dates");
                         cached
                     } else {
-                        let fetched = tmdb.get_release_dates(tmdb_id, country).await?;
-                        debug!(slug = %film.letterboxd_slug, theatrical = fetched.0.len(), streaming = fetched.1.len(), "fetched release dates");
+                        let result = tmdb.get_release_dates(tmdb_id, country).await?;
+                        let requested = &result.requested_country;
+                        debug!(slug = %film.letterboxd_slug, theatrical = requested.theatrical.len(), streaming = requested.streaming.len(), "fetched release dates");
 
-                        let has_mock_data = fetched.0.iter().any(|r| r.note.as_ref().map_or(false, |n| n.contains("Mock")))
-                            || fetched.1.iter().any(|r| r.note.as_ref().map_or(false, |n| n.contains("Mock")));
+                        let has_mock_data = requested.theatrical.iter().any(|r| r.note.as_ref().map_or(false, |n| n.contains("Mock")))
+                            || requested.streaming.iter().any(|r| r.note.as_ref().map_or(false, |n| n.contains("Mock")));
 
                         if !has_mock_data {
                             cache
-                                .put_releases(tmdb_id, country, &fetched.0, &fetched.1)
+                                .put_releases(tmdb_id, country, &requested.theatrical, &requested.streaming)
                                 .await?;
                         }
 
-                        fetched
+                        (requested.theatrical.clone(), requested.streaming.clone())
                     };
 
                 let out = FilmWithReleases {
@@ -108,8 +109,12 @@ async fn resolve_tmdb_id(
     if let Some(cached) = cache.get_film(slug).await? {
         if let Some(tmdb_id) = cached.tmdb_id {
             debug!(slug = %slug, tmdb_id = tmdb_id, "found cached TMDB ID");
-            let poster_path = tmdb.get_movie_details(tmdb_id).await.ok().flatten();
-            return Ok(Some((tmdb_id, cached.title, cached.year.map(|y| y as i16), poster_path)));
+            return Ok(Some((
+                tmdb_id,
+                cached.title,
+                cached.year.map(|y| y as i16),
+                cached.poster_path,
+            )));
         }
     }
 
@@ -153,7 +158,7 @@ async fn resolve_tmdb_id(
         poster_path = tmdb.get_movie_details(tmdb_id.unwrap()).await.ok().flatten();
     }
 
-    cache.upsert_film(slug, tmdb_id, &resolved_title, resolved_year).await?;
+    cache.upsert_film(slug, tmdb_id, &resolved_title, resolved_year, poster_path.clone()).await?;
 
     Ok(tmdb_id.map(|id| (id, resolved_title, resolved_year, poster_path)))
 }

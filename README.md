@@ -33,7 +33,8 @@ TMDB_RPS=4                    # Rate limit (requests/second), default: 4
 DATABASE_URL=sqlite://timeboxd.db?mode=rwc  # Default
 
 # Cache
-CACHE_TTL_DAYS=7              # Cache expiry in days, default: 7
+CACHE_TTL_DAYS=7              # Film metadata cache expiry in days, default: 7
+RELEASE_CACHE_HOURS=24        # Release dates cache expiry in hours, default: 24
 
 # Performance
 MAX_CONCURRENT_REQUESTS=5     # Concurrent film processing, default: 5

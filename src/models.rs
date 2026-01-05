@@ -59,3 +59,16 @@ pub struct TrackRequest {
     pub username: String,
     pub country: String,
 }
+
+#[derive(Clone, Debug)]
+pub struct CountryReleases {
+    pub country: String,
+    pub theatrical: Vec<ReleaseDate>,
+    pub streaming: Vec<ReleaseDate>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ReleaseDatesResult {
+    pub requested_country: CountryReleases,
+    pub all_countries: Vec<CountryReleases>,
+}

@@ -48,6 +48,11 @@ cargo check
 cargo run
 ```
 
+**IMPORTANT**: When running the application in an agent context, DO NOT use `cargo run` directly as it will block indefinitely. Instead:
+- Use background execution: `cargo run &` or `devenv shell -- cargo run &`
+- For testing, build only with `cargo build` and manually start the server outside the agent
+- Never use tools that run the server in-process without background execution
+
 ## Testing Commands
 
 ### Run All Tests

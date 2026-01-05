@@ -9,12 +9,17 @@ use crate::{
 #[derive(Clone)]
 pub struct CacheManager {
     db: DatabaseConnection,
-    ttl_seconds: i64,
+    film_ttl_seconds: i64,
+    release_ttl_seconds: i64,
 }
 
 impl CacheManager {
-    pub fn new(db: DatabaseConnection, ttl_days: i64) -> Self {
-        Self { db, ttl_seconds: ttl_days * 86_400 }
+    pub fn new(db: DatabaseConnection, film_ttl_days: i64, release_ttl_hours: i64) -> Self {
+        Self {
+            db,
+            film_ttl_seconds: film_ttl_days * 86_400,
+            release_ttl_seconds: release_ttl_hours * 3_600,
+        }
     }
 
     pub fn db(&self) -> &DatabaseConnection {
@@ -23,7 +28,7 @@ impl CacheManager {
 
     pub async fn get_film(&self, slug: &str) -> AppResult<Option<film_cache::Model>> {
         let film = film_cache::Entity::find_by_id(slug.to_string()).one(&self.db).await?;
-        Ok(film.filter(|f| self.is_fresh(f.updated_at)))
+        Ok(film.filter(|f| self.is_film_fresh(f.updated_at)))
     }
 
     pub async fn upsert_film(
@@ -32,6 +37,7 @@ impl CacheManager {
         tmdb_id: Option<i32>,
         title: &str,
         year: Option<i16>,
+        poster_path: Option<String>,
     ) -> AppResult<()> {
         let now = now_sec();
         let model = film_cache::ActiveModel {
@@ -39,6 +45,7 @@ impl CacheManager {
             tmdb_id: Set(tmdb_id),
             title: Set(title.to_string()),
             year: Set(year.map(|y| y as i32)),
+            poster_path: Set(poster_path),
             updated_at: Set(now),
         };
 
@@ -49,6 +56,7 @@ impl CacheManager {
                         film_cache::Column::TmdbId,
                         film_cache::Column::Title,
                         film_cache::Column::Year,
+                        film_cache::Column::PosterPath,
                         film_cache::Column::UpdatedAt,
                     ])
                     .to_owned(),
@@ -73,7 +81,7 @@ impl CacheManager {
         let Some(meta) = meta else {
             return Ok(None);
         };
-        if !self.is_fresh(meta.cached_at) {
+        if !self.is_release_fresh(meta.cached_at) {
             return Ok(None);
         }
 
@@ -172,8 +180,12 @@ impl CacheManager {
         Ok(())
     }
 
-    fn is_fresh(&self, cached_at: i64) -> bool {
-        now_sec().saturating_sub(cached_at) <= self.ttl_seconds
+    fn is_film_fresh(&self, cached_at: i64) -> bool {
+        now_sec().saturating_sub(cached_at) <= self.film_ttl_seconds
+    }
+
+    fn is_release_fresh(&self, cached_at: i64) -> bool {
+        now_sec().saturating_sub(cached_at) <= self.release_ttl_seconds
     }
 }
 
