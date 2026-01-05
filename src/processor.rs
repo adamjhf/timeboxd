@@ -49,14 +49,14 @@ pub async fn process(
                     } else {
                         let result = tmdb.get_release_dates(tmdb_id, country).await?;
                         let requested = &result.requested_country;
-                        debug!(slug = %film.letterboxd_slug, theatrical = requested.theatrical.len(), streaming = requested.streaming.len(), "fetched release dates");
+                        debug!(slug = %film.letterboxd_slug, theatrical = requested.theatrical.len(), streaming = requested.streaming.len(), countries = result.all_countries.len(), "fetched release dates");
 
                         let has_mock_data = requested.theatrical.iter().any(|r| r.note.as_ref().map_or(false, |n| n.contains("Mock")))
                             || requested.streaming.iter().any(|r| r.note.as_ref().map_or(false, |n| n.contains("Mock")));
 
                         if !has_mock_data {
                             cache
-                                .put_releases(tmdb_id, country, &requested.theatrical, &requested.streaming)
+                                .put_releases_multi_country(tmdb_id, &result.all_countries)
                                 .await?;
                         }
 

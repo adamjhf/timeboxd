@@ -128,15 +128,15 @@ impl TmdbClient {
 
         let today: Date = jiff::Zoned::now().into();
 
-        let mut theatrical_future = Vec::new();
-        let mut streaming_future = Vec::new();
-        let mut theatrical_past = Vec::new();
-        let mut streaming_past = Vec::new();
+        let mut all_countries = Vec::new();
 
         for res in resp.results {
-            if res.iso_3166_1 != country {
-                continue;
-            }
+            let country_code = res.iso_3166_1.clone();
+            let mut theatrical_future = Vec::new();
+            let mut streaming_future = Vec::new();
+            let mut theatrical_past = Vec::new();
+            let mut streaming_past = Vec::new();
+
             for rd in res.release_dates {
                 let Some(kind) = ReleaseType::from_tmdb_code(rd.type_) else {
                     continue;
@@ -162,58 +162,64 @@ impl TmdbClient {
                     }
                 }
             }
-        }
 
-        theatrical_future.sort_by_key(|r| r.date);
-        streaming_future.sort_by_key(|r| r.date);
-        theatrical_past.sort_by_key(|r| r.date);
-        streaming_past.sort_by_key(|r| r.date);
+            theatrical_future.sort_by_key(|r| r.date);
+            streaming_future.sort_by_key(|r| r.date);
+            theatrical_past.sort_by_key(|r| r.date);
+            streaming_past.sort_by_key(|r| r.date);
 
-        theatrical_future.dedup_by_key(|r| (r.date, r.release_type.as_tmdb_code(), r.note.clone()));
-        streaming_future.dedup_by_key(|r| (r.date, r.release_type.as_tmdb_code(), r.note.clone()));
+            theatrical_future
+                .dedup_by_key(|r| (r.date, r.release_type.as_tmdb_code(), r.note.clone()));
+            streaming_future
+                .dedup_by_key(|r| (r.date, r.release_type.as_tmdb_code(), r.note.clone()));
 
-        let has_future_theatrical = !theatrical_future.is_empty();
-        let has_future_streaming = !streaming_future.is_empty();
-        let has_past_theatrical = !theatrical_past.is_empty();
-        let has_past_streaming = !streaming_past.is_empty();
+            let has_future_theatrical = !theatrical_future.is_empty();
+            let has_future_streaming = !streaming_future.is_empty();
+            let has_past_theatrical = !theatrical_past.is_empty();
+            let has_past_streaming = !streaming_past.is_empty();
 
-        let mut theatrical = theatrical_future;
-        let mut streaming = streaming_future;
+            let mut theatrical = theatrical_future;
+            let mut streaming = streaming_future;
 
-        if (has_future_theatrical || has_future_streaming)
-            && has_past_theatrical
-            && theatrical.is_empty()
-        {
-            if let Some(latest) = theatrical_past.into_iter().max_by_key(|r| r.date) {
-                theatrical.push(ReleaseDate {
-                    date: latest.date,
-                    release_type: ReleaseType::Theatrical,
-                    note: Some("Already available".to_string()),
-                });
+            if (has_future_theatrical || has_future_streaming)
+                && has_past_theatrical
+                && theatrical.is_empty()
+            {
+                if let Some(latest) = theatrical_past.into_iter().max_by_key(|r| r.date) {
+                    theatrical.push(ReleaseDate {
+                        date: latest.date,
+                        release_type: ReleaseType::Theatrical,
+                        note: Some("Already available".to_string()),
+                    });
+                }
             }
-        }
 
-        if (has_future_theatrical || has_future_streaming)
-            && has_past_streaming
-            && streaming.is_empty()
-        {
-            if let Some(latest) = streaming_past.into_iter().max_by_key(|r| r.date) {
-                streaming.push(ReleaseDate {
-                    date: latest.date,
-                    release_type: ReleaseType::Digital,
-                    note: Some("Already available".to_string()),
-                });
+            if (has_future_theatrical || has_future_streaming)
+                && has_past_streaming
+                && streaming.is_empty()
+            {
+                if let Some(latest) = streaming_past.into_iter().max_by_key(|r| r.date) {
+                    streaming.push(ReleaseDate {
+                        date: latest.date,
+                        release_type: ReleaseType::Digital,
+                        note: Some("Already available".to_string()),
+                    });
+                }
             }
+
+            all_countries.push(CountryReleases { country: country_code, theatrical, streaming });
         }
 
-        Ok(ReleaseDatesResult {
-            requested_country: CountryReleases {
-                country: country.to_string(),
-                theatrical,
-                streaming,
-            },
-            all_countries: vec![],
-        })
+        let requested_country =
+            all_countries.iter().find(|c| c.country == country).cloned().unwrap_or_else(|| {
+                CountryReleases {
+                    country: country.to_string(),
+                    theatrical: vec![],
+                    streaming: vec![],
+                }
+            });
+
+        Ok(ReleaseDatesResult { requested_country, all_countries })
     }
 }
 

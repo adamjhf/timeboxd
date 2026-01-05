@@ -168,6 +168,59 @@ impl CacheManager {
         Ok(())
     }
 
+    pub async fn put_releases_multi_country(
+        &self,
+        tmdb_id: i32,
+        countries: &[crate::models::CountryReleases],
+    ) -> AppResult<()> {
+        let now = now_sec();
+
+        let txn = self.db.begin().await?;
+
+        release_cache::Entity::delete_many()
+            .filter(release_cache::Column::TmdbId.eq(tmdb_id))
+            .exec(&txn)
+            .await?;
+
+        for country_data in countries {
+            for rel in country_data.theatrical.iter().chain(country_data.streaming.iter()) {
+                let model = release_cache::ActiveModel {
+                    id: Default::default(),
+                    tmdb_id: Set(tmdb_id),
+                    country: Set(country_data.country.clone()),
+                    release_date: Set(rel.date.to_string()),
+                    release_type: Set(rel.release_type.as_tmdb_code()),
+                    note: Set(rel.note.clone()),
+                    cached_at: Set(now),
+                };
+                release_cache::Entity::insert(model).exec(&txn).await?;
+            }
+
+            let meta = release_cache_meta::ActiveModel {
+                id: Default::default(),
+                tmdb_id: Set(tmdb_id),
+                country: Set(country_data.country.clone()),
+                cached_at: Set(now),
+            };
+
+            release_cache_meta::Entity::insert(meta)
+                .on_conflict(
+                    sea_orm::sea_query::OnConflict::columns([
+                        release_cache_meta::Column::TmdbId,
+                        release_cache_meta::Column::Country,
+                    ])
+                    .update_columns([release_cache_meta::Column::CachedAt])
+                    .to_owned(),
+                )
+                .exec(&txn)
+                .await?;
+        }
+
+        txn.commit().await?;
+
+        Ok(())
+    }
+
     pub async fn clear_mock_release_dates(&self) -> AppResult<()> {
         // Delete release dates that contain "Mock" in the note field
         release_cache::Entity::delete_many()
