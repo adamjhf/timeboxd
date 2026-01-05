@@ -82,13 +82,6 @@ pub async fn process(
         .await?;
         info!(username = %username, result_count = films.len(), "completed processing");
 
-        if films.is_empty() {
-            info!(username = %username, "no upcoming releases found");
-            return Ok(templates::error_fragment(
-                "No upcoming releases found for films in your watchlist.".to_string(),
-            ));
-        }
-
         Ok::<_, anyhow::Error>(templates::results_fragment(&username, &country, &films))
     }
     .await;

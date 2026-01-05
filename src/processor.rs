@@ -4,7 +4,7 @@ use tracing::{debug, warn};
 use crate::{
     cache::CacheManager,
     error::AppResult,
-    models::{FilmWithReleases, WishlistFilm},
+    models::{FilmWithReleases, ReleaseCategory, WishlistFilm},
     scraper,
     tmdb::TmdbClient,
 };
@@ -42,26 +42,14 @@ pub async fn process(
 
                 debug!(slug = %film.letterboxd_slug, tmdb_id = tmdb_id, "fetching release dates");
 
-                let (theatrical, streaming) =
-                    if let Some(cached) = cache.get_releases(tmdb_id, country).await? {
-                        debug!(slug = %film.letterboxd_slug, "using cached release dates");
-                        cached
-                    } else {
-                        let result = tmdb.get_release_dates(tmdb_id, country).await?;
-                        let requested = &result.requested_country;
-                        debug!(slug = %film.letterboxd_slug, theatrical = requested.theatrical.len(), streaming = requested.streaming.len(), countries = result.all_countries.len(), "fetched release dates");
-
-                        let has_mock_data = requested.theatrical.iter().any(|r| r.note.as_ref().map_or(false, |n| n.contains("Mock")))
-                            || requested.streaming.iter().any(|r| r.note.as_ref().map_or(false, |n| n.contains("Mock")));
-
-                        if !has_mock_data {
-                            cache
-                                .put_releases_multi_country(tmdb_id, &result.all_countries)
-                                .await?;
-                        }
-
-                        (requested.theatrical.clone(), requested.streaming.clone())
-                    };
+                let (theatrical, streaming, category) = get_releases_with_fallback(
+                    cache,
+                    tmdb,
+                    tmdb_id,
+                    country,
+                    &film.letterboxd_slug,
+                )
+                .await?;
 
                 let out = FilmWithReleases {
                     title,
@@ -71,17 +59,19 @@ pub async fn process(
                     poster_path,
                     theatrical,
                     streaming,
+                    category,
                 };
 
-                Ok((!out.is_empty()).then_some(out))
-            }.await;
+                Ok(Some(out))
+            }
+            .await;
 
             match result {
                 Ok(film) => film,
                 Err(err) => {
                     warn!(slug = %film.letterboxd_slug, error = %err, "failed to process film");
                     None
-                }
+                },
             }
         })
         .buffer_unordered(max_concurrent.max(1))
@@ -161,4 +151,73 @@ async fn resolve_tmdb_id(
     cache.upsert_film(slug, tmdb_id, &resolved_title, resolved_year, poster_path.clone()).await?;
 
     Ok(tmdb_id.map(|id| (id, resolved_title, resolved_year, poster_path)))
+}
+
+async fn get_releases_with_fallback(
+    cache: &CacheManager,
+    tmdb: &TmdbClient,
+    tmdb_id: i32,
+    country: &str,
+    slug: &str,
+) -> AppResult<(Vec<crate::models::ReleaseDate>, Vec<crate::models::ReleaseDate>, ReleaseCategory)>
+{
+    let (local_theatrical, local_streaming) = if let Some(cached) =
+        cache.get_releases(tmdb_id, country).await?
+    {
+        debug!(slug = %slug, "using cached release dates for local country");
+        cached
+    } else {
+        let result = tmdb.get_release_dates(tmdb_id, country).await?;
+        let requested = &result.requested_country;
+        debug!(slug = %slug, theatrical = requested.theatrical.len(), streaming = requested.streaming.len(), countries = result.all_countries.len(), "fetched release dates");
+
+        let has_mock_data = requested
+            .theatrical
+            .iter()
+            .any(|r| r.note.as_ref().map_or(false, |n| n.contains("Mock")))
+            || requested
+                .streaming
+                .iter()
+                .any(|r| r.note.as_ref().map_or(false, |n| n.contains("Mock")));
+
+        if !has_mock_data {
+            cache.put_releases_multi_country(tmdb_id, &result.all_countries).await?;
+        }
+
+        (requested.theatrical.clone(), requested.streaming.clone())
+    };
+
+    if !local_theatrical.is_empty() || !local_streaming.is_empty() {
+        return Ok((local_theatrical, local_streaming, ReleaseCategory::Local));
+    }
+
+    if country == "US" {
+        return Ok((vec![], vec![], ReleaseCategory::NoReleases));
+    }
+
+    debug!(slug = %slug, "no local releases found, trying US");
+
+    let (us_theatrical, us_streaming) = if let Some(cached) =
+        cache.get_releases(tmdb_id, "US").await?
+    {
+        debug!(slug = %slug, "using cached US release dates");
+        cached
+    } else {
+        let result = tmdb.get_release_dates(tmdb_id, "US").await?;
+        let us_country = result.all_countries.iter().find(|c| c.country == "US");
+
+        if let Some(us) = us_country {
+            debug!(slug = %slug, theatrical = us.theatrical.len(), streaming = us.streaming.len(), "fetched US release dates");
+            (us.theatrical.clone(), us.streaming.clone())
+        } else {
+            debug!(slug = %slug, "no US releases found in cached data");
+            (vec![], vec![])
+        }
+    };
+
+    if !us_theatrical.is_empty() || !us_streaming.is_empty() {
+        return Ok((us_theatrical, us_streaming, ReleaseCategory::US));
+    }
+
+    Ok((vec![], vec![], ReleaseCategory::NoReleases))
 }

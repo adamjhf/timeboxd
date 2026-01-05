@@ -2,7 +2,7 @@ use hypertext::{Raw, maud, prelude::*};
 
 use crate::{
     countries::{COUNTRIES, get_country_name},
-    models::{FilmWithReleases, ReleaseDate, ReleaseType},
+    models::{FilmWithReleases, ReleaseCategory, ReleaseDate, ReleaseType},
 };
 
 const TAILWIND_CDN: &str = "https://cdn.tailwindcss.com";
@@ -101,6 +101,33 @@ pub fn processing_page(username: &str, country: &str) -> String {
 pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases]) -> String {
     let country_name = get_country_name(country);
     let letterboxd_user_url = format!("https://letterboxd.com/{}/", username);
+
+    let today: jiff::civil::Date = jiff::Zoned::now().into();
+    let current_year = today.year();
+    let min_year = current_year - 1;
+
+    fn sort_films(films: &mut Vec<&FilmWithReleases>) {
+        films.sort_by(|a, b| match (a.year, b.year) {
+            (Some(ay), Some(by)) => ay.cmp(&by).then(a.title.cmp(&b.title)),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => a.title.cmp(&b.title),
+        });
+    }
+
+    let mut local_films: Vec<_> =
+        films.iter().filter(|f| f.category == ReleaseCategory::Local).collect();
+    let mut us_films: Vec<_> = films.iter().filter(|f| f.category == ReleaseCategory::US).collect();
+    let mut no_releases: Vec<_> = films
+        .iter()
+        .filter(|f| f.category == ReleaseCategory::NoReleases)
+        .filter(|f| f.year.map_or(true, |y| y >= min_year))
+        .collect();
+
+    sort_films(&mut local_films);
+    sort_films(&mut us_films);
+    sort_films(&mut no_releases);
+
     content_div(maud! {
         div class="max-w-4xl mx-auto px-4 py-4" {
             div class="flex items-start justify-between gap-4" {
@@ -118,12 +145,46 @@ pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases
 
             @if films.is_empty() {
                 div class="mt-4 bg-slate-800 shadow-xl rounded-lg p-4 border border-slate-700" {
-                    p class="text-slate-400" { "No upcoming theatrical or streaming releases found." }
+                    p class="text-slate-400" { "No films found in watchlist." }
                 }
             } @else {
-                div class="mt-4 space-y-2" {
-                    @for film in films {
-                        (film_card(film))
+                @if !local_films.is_empty() {
+                    div class="mt-4" {
+                        h2 class="text-lg font-semibold text-slate-200 mb-2" { (country_name) " releases" }
+                        div class="space-y-2" {
+                            @for film in &local_films {
+                                (film_card(film))
+                            }
+                        }
+                    }
+                }
+
+                @if !us_films.is_empty() && country != "US" {
+                    div class="mt-6" {
+                        h2 class="text-lg font-semibold text-slate-200 mb-2" { "US releases" }
+                        p class="text-sm text-slate-400 mb-2" { "No local release dates found for these films" }
+                        div class="space-y-2" {
+                            @for film in &us_films {
+                                (film_card(film))
+                            }
+                        }
+                    }
+                }
+
+                @if !no_releases.is_empty() {
+                    div class="mt-6" {
+                        h2 class="text-lg font-semibold text-slate-200 mb-2" { "No release dates found" }
+                        div class="space-y-2" {
+                            @for film in &no_releases {
+                                (film_card(film))
+                            }
+                        }
+                    }
+                }
+
+                @if local_films.is_empty() && us_films.is_empty() && no_releases.is_empty() {
+                    div class="mt-4 bg-slate-800 shadow-xl rounded-lg p-4 border border-slate-700" {
+                        p class="text-slate-400" { "No films processed." }
                     }
                 }
             }

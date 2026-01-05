@@ -37,6 +37,13 @@ pub struct ReleaseDate {
     pub note: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub enum ReleaseCategory {
+    Local,
+    US,
+    NoReleases,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct FilmWithReleases {
     pub title: String,
@@ -46,12 +53,7 @@ pub struct FilmWithReleases {
     pub poster_path: Option<String>,
     pub theatrical: Vec<ReleaseDate>,
     pub streaming: Vec<ReleaseDate>,
-}
-
-impl FilmWithReleases {
-    pub fn is_empty(&self) -> bool {
-        self.theatrical.is_empty() && self.streaming.is_empty()
-    }
+    pub category: ReleaseCategory,
 }
 
 #[derive(Debug, Deserialize)]
