@@ -33,7 +33,7 @@ pub async fn process(
         .map(|film| async move {
             debug!(slug = %film.letterboxd_slug, "processing film");
             let result: AppResult<Option<FilmWithReleases>> = async {
-                let Some((tmdb_id, title, year)) =
+                let Some((tmdb_id, title, year, poster_path)) =
                     resolve_tmdb_id(http, cache, tmdb, &film.letterboxd_slug, film.year).await?
                 else {
                     debug!(slug = %film.letterboxd_slug, "no TMDB ID found");
@@ -66,6 +66,8 @@ pub async fn process(
                     title,
                     year,
                     tmdb_id,
+                    letterboxd_slug: film.letterboxd_slug.clone(),
+                    poster_path,
                     theatrical,
                     streaming,
                 };
@@ -100,55 +102,58 @@ async fn resolve_tmdb_id(
     tmdb: &TmdbClient,
     slug: &str,
     year: Option<i16>,
-) -> AppResult<Option<(i32, String, Option<i16>)>> {
+) -> AppResult<Option<(i32, String, Option<i16>, Option<String>)>> {
     debug!(slug = %slug, "resolving TMDB ID");
 
     if let Some(cached) = cache.get_film(slug).await? {
         if let Some(tmdb_id) = cached.tmdb_id {
             debug!(slug = %slug, tmdb_id = tmdb_id, "found cached TMDB ID");
-            return Ok(Some((tmdb_id, cached.title, cached.year.map(|y| y as i16))));
+            let poster_path = tmdb.get_movie_details(tmdb_id).await.ok().flatten();
+            return Ok(Some((tmdb_id, cached.title, cached.year.map(|y| y as i16), poster_path)));
         }
     }
 
-    let (resolved_title, resolved_year, mut tmdb_id) = match scraper::fetch_letterboxd_film_data(
-        http, slug,
-    )
-    .await
-    {
-        Ok(data) => {
-            if let Some(id) = data.tmdb_id {
-                debug!(slug = %slug, tmdb_id = id, "found TMDB ID from Letterboxd");
-            }
-            (data.title, data.year.or(year), data.tmdb_id)
-        },
-        Err(err) => {
-            warn!(slug = %slug, error = %err, "failed to fetch Letterboxd data, using fallback title");
-            let fallback_title = slug
-                .split('-')
-                .map(|word| {
-                    let mut chars = word.chars();
-                    match chars.next() {
-                        None => String::new(),
-                        Some(first) => first.to_uppercase().chain(chars.as_str().chars()).collect(),
-                    }
-                })
-                .collect::<Vec<String>>()
-                .join(" ");
-            (fallback_title, year, None)
-        },
-    };
+    let (resolved_title, resolved_year, mut tmdb_id, mut poster_path) =
+        match scraper::fetch_letterboxd_film_data(http, slug).await {
+            Ok(data) => {
+                if let Some(id) = data.tmdb_id {
+                    debug!(slug = %slug, tmdb_id = id, "found TMDB ID from Letterboxd");
+                }
+                (data.title, data.year.or(year), data.tmdb_id, None)
+            },
+            Err(err) => {
+                warn!(slug = %slug, error = %err, "failed to fetch Letterboxd data, using fallback title");
+                let fallback_title = slug
+                    .split('-')
+                    .map(|word| {
+                        let mut chars = word.chars();
+                        match chars.next() {
+                            None => String::new(),
+                            Some(first) => {
+                                first.to_uppercase().chain(chars.as_str().chars()).collect()
+                            },
+                        }
+                    })
+                    .collect::<Vec<String>>()
+                    .join(" ");
+                (fallback_title, year, None, None)
+            },
+        };
 
     if tmdb_id.is_none() {
         debug!(slug = %slug, title = %resolved_title, year = ?resolved_year, "searching TMDB API");
-        tmdb_id = tmdb.search_movie(&resolved_title, resolved_year).await?;
-        if let Some(id) = tmdb_id {
+        if let Some((id, poster)) = tmdb.search_movie(&resolved_title, resolved_year).await? {
             debug!(slug = %slug, tmdb_id = id, "found TMDB ID via search");
+            tmdb_id = Some(id);
+            poster_path = poster;
         } else {
             debug!(slug = %slug, "no TMDB ID found");
         }
+    } else if poster_path.is_none() {
+        poster_path = tmdb.get_movie_details(tmdb_id.unwrap()).await.ok().flatten();
     }
 
     cache.upsert_film(slug, tmdb_id, &resolved_title, resolved_year).await?;
 
-    Ok(tmdb_id.map(|id| (id, resolved_title, resolved_year)))
+    Ok(tmdb_id.map(|id| (id, resolved_title, resolved_year, poster_path)))
 }

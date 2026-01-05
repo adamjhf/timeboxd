@@ -178,24 +178,39 @@ fn content_div(inner: impl Renderable) -> String {
 
 fn film_card(film: &FilmWithReleases) -> impl Renderable + '_ {
     maud! {
-        div class="bg-white shadow rounded p-3" {
-            div class="flex items-start justify-between gap-3" {
-                div {
-                    h2 class="text-lg font-semibold text-gray-900" {
-                        (film.title)
-                        @if let Some(year) = film.year {
-                            span class="ml-1.5 font-normal text-gray-500" { "(" (year) ")" }
+        div class="bg-white shadow rounded p-3 flex gap-3" {
+            @if let Some(poster_path) = &film.poster_path {
+                img
+                    class="w-20 h-30 object-cover rounded flex-shrink-0"
+                    src=(format!("https://image.tmdb.org/t/p/w200{}", poster_path))
+                    alt=(format!("{} poster", film.title))
+                    loading="lazy";
+            }
+            div class="flex-1 min-w-0" {
+                div class="flex items-start justify-between gap-2" {
+                    div class="flex-1 min-w-0" {
+                        h2 class="text-lg font-semibold text-gray-900" {
+                            (film.title)
+                            @if let Some(year) = film.year {
+                                span class="ml-1.5 font-normal text-gray-500" { "(" (year) ")" }
+                            }
+                        }
+                        div class="mt-0.5 flex gap-2 text-xs" {
+                            a class="text-gray-500 hover:text-gray-700" href=(format!("https://letterboxd.com/film/{}/", film.letterboxd_slug)) target="_blank" rel="noopener noreferrer" {
+                                "Letterboxd"
+                            }
+                            span class="text-gray-400" { "·" }
+                            a class="text-gray-500 hover:text-gray-700" href=(format!("https://www.themoviedb.org/movie/{}", film.tmdb_id)) target="_blank" rel="noopener noreferrer" {
+                                "TMDB"
+                            }
                         }
                     }
-                    a class="mt-0.5 block text-xs text-gray-500 hover:text-gray-700" href=(format!("https://www.themoviedb.org/movie/{}", film.tmdb_id)) target="_blank" rel="noopener noreferrer" {
-                        "TMDB"
-                    }
                 }
-            }
 
-            div class="mt-2 grid gap-3 md:grid-cols-2" {
-                (release_list("Theatrical", &film.theatrical, ReleaseType::Theatrical))
-                (release_list("Streaming", &film.streaming, ReleaseType::Digital))
+                div class="mt-2 grid gap-3 md:grid-cols-2" {
+                    (release_list("Theatrical", &film.theatrical, ReleaseType::Theatrical))
+                    (release_list("Streaming", &film.streaming, ReleaseType::Digital))
+                }
             }
         }
     }

@@ -32,10 +32,13 @@ impl TmdbClient {
         Self { client, access_token, base_url, limiter }
     }
 
-    pub async fn search_movie(&self, title: &str, year: Option<i16>) -> AppResult<Option<i32>> {
-        // Use mock data if access token is not provided
+    pub async fn search_movie(
+        &self,
+        title: &str,
+        year: Option<i16>,
+    ) -> AppResult<Option<(i32, Option<String>)>> {
         if self.access_token.trim().is_empty() {
-            return Ok(Some(550)); // Mock TMDB ID for Fight Club
+            return Ok(Some((550, None)));
         }
 
         self.limiter.until_ready().await;
@@ -51,7 +54,29 @@ impl TmdbClient {
         }
 
         let resp: SearchResponse = req.send().await?.error_for_status()?.json().await?;
-        Ok(resp.results.into_iter().next().map(|m| m.id))
+        Ok(resp.results.into_iter().next().map(|m| (m.id, m.poster_path)))
+    }
+
+    pub async fn get_movie_details(&self, tmdb_id: i32) -> AppResult<Option<String>> {
+        if self.access_token.trim().is_empty() {
+            return Ok(None);
+        }
+
+        self.limiter.until_ready().await;
+
+        let url = format!("{}/movie/{}", self.base_url.trim_end_matches('/'), tmdb_id);
+
+        let resp: MovieDetails = self
+            .client
+            .get(url)
+            .bearer_auth(&self.access_token)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+
+        Ok(resp.poster_path)
     }
 
     pub async fn get_release_dates(
@@ -186,6 +211,12 @@ struct SearchResponse {
 #[derive(Debug, Deserialize)]
 struct SearchMovie {
     id: i32,
+    poster_path: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MovieDetails {
+    poster_path: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

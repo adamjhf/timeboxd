@@ -42,6 +42,8 @@ pub struct FilmWithReleases {
     pub title: String,
     pub year: Option<i16>,
     pub tmdb_id: i32,
+    pub letterboxd_slug: String,
+    pub poster_path: Option<String>,
     pub theatrical: Vec<ReleaseDate>,
     pub streaming: Vec<ReleaseDate>,
 }
