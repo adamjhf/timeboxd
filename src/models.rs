@@ -39,7 +39,8 @@ pub struct ReleaseDate {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub enum ReleaseCategory {
-    Local,
+    LocalUpcoming,
+    LocalAlreadyAvailable,
     US,
     NoReleases,
 }

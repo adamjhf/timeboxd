@@ -106,7 +106,35 @@ pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases
     let current_year = today.year();
     let min_year = current_year - 1;
 
-    fn sort_films(films: &mut Vec<&FilmWithReleases>) {
+    fn sort_by_first_release_date(films: &mut Vec<&FilmWithReleases>) {
+        films.sort_by(|a, b| {
+            let a_first_date = a.theatrical.first().or_else(|| a.streaming.first()).map(|r| r.date);
+            let b_first_date = b.theatrical.first().or_else(|| b.streaming.first()).map(|r| r.date);
+
+            match (a_first_date, b_first_date) {
+                (Some(ad), Some(bd)) => ad.cmp(&bd).then(a.title.cmp(&b.title)),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => a.title.cmp(&b.title),
+            }
+        });
+    }
+
+    fn sort_by_release_date(films: &mut Vec<&FilmWithReleases>) {
+        films.sort_by(|a, b| {
+            let a_date = a.theatrical.first().or_else(|| a.streaming.first()).map(|r| r.date);
+            let b_date = b.theatrical.first().or_else(|| b.streaming.first()).map(|r| r.date);
+
+            match (a_date, b_date) {
+                (Some(ad), Some(bd)) => ad.cmp(&bd).then(a.title.cmp(&b.title)),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => a.title.cmp(&b.title),
+            }
+        });
+    }
+
+    fn sort_by_year(films: &mut Vec<&FilmWithReleases>) {
         films.sort_by(|a, b| match (a.year, b.year) {
             (Some(ay), Some(by)) => ay.cmp(&by).then(a.title.cmp(&b.title)),
             (Some(_), None) => std::cmp::Ordering::Less,
@@ -115,8 +143,10 @@ pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases
         });
     }
 
-    let mut local_films: Vec<_> =
-        films.iter().filter(|f| f.category == ReleaseCategory::Local).collect();
+    let mut local_upcoming_films: Vec<_> =
+        films.iter().filter(|f| f.category == ReleaseCategory::LocalUpcoming).collect();
+    let mut local_already_available_films: Vec<_> =
+        films.iter().filter(|f| f.category == ReleaseCategory::LocalAlreadyAvailable).collect();
     let mut us_films: Vec<_> = films.iter().filter(|f| f.category == ReleaseCategory::US).collect();
     let mut no_releases: Vec<_> = films
         .iter()
@@ -124,9 +154,10 @@ pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases
         .filter(|f| f.year.map_or(true, |y| y >= min_year))
         .collect();
 
-    sort_films(&mut local_films);
-    sort_films(&mut us_films);
-    sort_films(&mut no_releases);
+    sort_by_first_release_date(&mut local_upcoming_films);
+    sort_by_release_date(&mut local_already_available_films);
+    sort_by_first_release_date(&mut us_films);
+    sort_by_year(&mut no_releases);
 
     content_div(maud! {
         div class="max-w-4xl mx-auto px-4 py-4" {
@@ -148,11 +179,11 @@ pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases
                     p class="text-slate-400" { "No films found in watchlist." }
                 }
             } @else {
-                @if !local_films.is_empty() {
+                @if !local_upcoming_films.is_empty() {
                     div class="mt-4" {
-                        h2 class="text-lg font-semibold text-slate-200 mb-2" { (country_name) " releases" }
+                        h2 class="text-lg font-semibold text-slate-200 mb-2" { (country_name) " upcoming releases" }
                         div class="space-y-2" {
-                            @for film in &local_films {
+                            @for film in &local_upcoming_films {
                                 (film_card(film))
                             }
                         }
@@ -171,6 +202,18 @@ pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases
                     }
                 }
 
+                @if !local_already_available_films.is_empty() {
+                    div class="mt-6" {
+                        h2 class="text-lg font-semibold text-slate-200 mb-2" { (country_name) " recent releases" }
+                        p class="text-sm text-slate-400 mb-2" { "Films released in the last year" }
+                        div class="space-y-2" {
+                            @for film in &local_already_available_films {
+                                (film_card(film))
+                            }
+                        }
+                    }
+                }
+
                 @if !no_releases.is_empty() {
                     div class="mt-6" {
                         h2 class="text-lg font-semibold text-slate-200 mb-2" { "No release dates found" }
@@ -182,7 +225,7 @@ pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases
                     }
                 }
 
-                @if local_films.is_empty() && us_films.is_empty() && no_releases.is_empty() {
+                @if local_upcoming_films.is_empty() && local_already_available_films.is_empty() && us_films.is_empty() && no_releases.is_empty() {
                     div class="mt-4 bg-slate-800 shadow-xl rounded-lg p-4 border border-slate-700" {
                         p class="text-slate-400" { "No films processed." }
                     }

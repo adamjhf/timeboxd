@@ -187,8 +187,34 @@ async fn get_releases_with_fallback(
         (requested.theatrical.clone(), requested.streaming.clone())
     };
 
-    if !local_theatrical.is_empty() || !local_streaming.is_empty() {
-        return Ok((local_theatrical, local_streaming, ReleaseCategory::Local));
+    // Separate upcoming releases from "Already available" releases
+    let (local_upcoming_theatrical, local_already_available_theatrical): (Vec<_>, Vec<_>) =
+        local_theatrical
+            .into_iter()
+            .partition(|r| r.note.as_ref().map_or(true, |n| !n.contains("Already available")));
+    let (local_upcoming_streaming, local_already_available_streaming): (Vec<_>, Vec<_>) =
+        local_streaming
+            .into_iter()
+            .partition(|r| r.note.as_ref().map_or(true, |n| !n.contains("Already available")));
+
+    // Check for upcoming releases first
+    if !local_upcoming_theatrical.is_empty() || !local_upcoming_streaming.is_empty() {
+        let mut all_theatrical = local_upcoming_theatrical;
+        let mut all_streaming = local_upcoming_streaming;
+        all_theatrical.extend(local_already_available_theatrical);
+        all_streaming.extend(local_already_available_streaming);
+        return Ok((all_theatrical, all_streaming, ReleaseCategory::LocalUpcoming));
+    }
+
+    // Check for recent "Already available" releases
+    if !local_already_available_theatrical.is_empty()
+        || !local_already_available_streaming.is_empty()
+    {
+        return Ok((
+            local_already_available_theatrical,
+            local_already_available_streaming,
+            ReleaseCategory::LocalAlreadyAvailable,
+        ));
     }
 
     if country == "US" {
