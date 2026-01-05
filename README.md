@@ -52,9 +52,19 @@ RUST_LOG=info,timeboxd=debug  # Default: info,timeboxd=debug,sqlx=warn
 devenv shell
 cargo run
 
+# Watch mode with auto-reload (recommended)
+devenv shell
+bacon
+
 # Without devenv
 cargo run
 ```
+
+**Bacon commands**:
+- `bacon run` - Auto-reload on file changes
+- `bacon check` - Continuous compilation checking
+- `bacon clippy` - Continuous linting
+- `bacon test` - Run tests on changes
 
 ### Production
 

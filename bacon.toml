@@ -1,0 +1,22 @@
+default_job = "run"
+
+[jobs.run]
+command = ["cargo", "run", "--color", "always"]
+need_stdout = true
+watch = ["src", "Cargo.toml", "migrations"]
+background = true
+
+[jobs.check]
+command = ["cargo", "check", "--color", "always"]
+need_stdout = false
+watch = ["src", "Cargo.toml"]
+
+[jobs.clippy]
+command = ["cargo", "clippy", "--color", "always"]
+need_stdout = false
+watch = ["src", "Cargo.toml"]
+
+[jobs.test]
+command = ["cargo", "test", "--color", "always"]
+need_stdout = true
+watch = ["src", "Cargo.toml"]

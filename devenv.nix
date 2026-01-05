@@ -9,6 +9,7 @@
     pkgs.sqlite
     pkgs.sea-orm-cli
     pkgs.secretspec
+    pkgs.bacon
   ];
 
   languages.rust = {
