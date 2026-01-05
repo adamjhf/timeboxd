@@ -13,35 +13,35 @@ pub fn index_page() -> String {
     page(
         "Letterboxd Release Tracker",
         maud! {
-            div class="min-h-screen bg-gray-50" {
+            div class="min-h-screen bg-slate-900" {
                 div class="max-w-2xl mx-auto px-6 py-12" {
-                    div class="bg-white shadow rounded-lg p-8" {
-                        h1 class="text-3xl font-bold text-gray-900" { "Letterboxd Release Tracker" }
-                        p class="mt-2 text-gray-600" { "Upcoming theatrical and streaming releases from your watchlist." }
+                    div class="bg-slate-800 shadow-xl rounded-lg p-8 border border-slate-700" {
+                        h1 class="text-3xl font-bold text-slate-100" { "Letterboxd Release Tracker" }
+                        p class="mt-2 text-slate-400" { "Upcoming theatrical and streaming releases from your watchlist." }
 
                         form class="mt-8 space-y-6" method="post" action="/track" {
                             div {
-                                label class="block text-sm font-medium text-gray-700" for="username" { "Letterboxd username" }
-                                input class="mt-2 w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" name="username" id="username" required;
+                                label class="block text-sm font-medium text-slate-300" for="username" { "Letterboxd username" }
+                                input class="mt-2 w-full rounded-md border border-slate-600 bg-slate-700 text-slate-100 px-3 py-2 placeholder-slate-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500" name="username" id="username" required;
                             }
 
                             div {
-                                label class="block text-sm font-medium text-gray-700" for="country-search" { "Country" }
+                                label class="block text-sm font-medium text-slate-300" for="country-search" { "Country" }
                                 div class="relative mt-2" {
                                     input
                                         type="text"
                                         id="country-search"
                                         autocomplete="off"
                                         placeholder="Search countries..."
-                                        class="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                        class="w-full rounded-md border border-slate-600 bg-slate-700 text-slate-100 px-3 py-2 placeholder-slate-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
                                         onkeyup="filterCountries()"
                                         onfocus="document.getElementById('country-dropdown').classList.remove('hidden')"
                                         ;
                                     input type="hidden" name="country" id="country" required;
-                                    div id="country-dropdown" class="hidden absolute z-10 mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto" {
+                                    div id="country-dropdown" class="hidden absolute z-10 mt-1 w-full bg-slate-700 border border-slate-600 rounded-md shadow-lg max-h-60 overflow-y-auto" {
                                         @for country in COUNTRIES {
                                             div
-                                                class="country-option px-3 py-2 hover:bg-blue-50 cursor-pointer focus:bg-blue-100 focus:outline-none"
+                                                class="country-option px-3 py-2 text-slate-200 hover:bg-slate-600 cursor-pointer focus:bg-orange-900 focus:outline-none"
                                                 data-code=(country.code)
                                                 data-name=(country.name)
                                                 tabindex="-1"
@@ -52,10 +52,10 @@ pub fn index_page() -> String {
                                         }
                                     }
                                 }
-                                p class="mt-2 text-xs text-gray-500" { "Select a country to see release dates for that region." }
+                                p class="mt-2 text-xs text-slate-500" { "Select a country to see release dates for that region." }
                             }
 
-                            button id="submit-button" class="w-full rounded-md bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700" type="submit" { "Track" }
+                            button id="submit-button" class="w-full rounded-md bg-orange-600 px-4 py-2 font-semibold text-white hover:bg-orange-700" type="submit" { "Track" }
                         }
                         (country_selector_script())
                     }
@@ -75,13 +75,13 @@ pub fn processing_page(username: &str, country: &str) -> String {
     page(
         "Processing",
         maud! {
-            div class="min-h-screen bg-gray-50 flex items-center justify-center" {
+            div class="min-h-screen bg-slate-900 flex items-center justify-center" {
                 div id="content" class="max-w-xl w-full px-6" {
-                    div class="bg-white shadow rounded-lg p-8 text-center" {
-                        div class="mx-auto h-12 w-12 rounded-full border-4 border-blue-200 border-t-blue-600 animate-spin" {}
-                        h1 class="mt-6 text-xl font-semibold text-gray-900" { "Processing" }
-                        p class="mt-2 text-gray-600" { "Fetching watchlist and checking release dates." }
-                        p class="mt-2 text-sm text-gray-500" { "This may take a minute for large watchlists." }
+                    div class="bg-slate-800 shadow-xl rounded-lg p-8 text-center border border-slate-700" {
+                        div class="mx-auto h-12 w-12 rounded-full border-4 border-slate-700 border-t-orange-600 animate-spin" {}
+                        h1 class="mt-6 text-xl font-semibold text-slate-100" { "Processing" }
+                        p class="mt-2 text-slate-400" { "Fetching watchlist and checking release dates." }
+                        p class="mt-2 text-sm text-slate-500" { "This may take a minute for large watchlists." }
                     }
                 }
             }
@@ -92,7 +92,7 @@ pub fn processing_page(username: &str, country: &str) -> String {
                         document.getElementById('content').innerHTML = html;
                     }})
                     .catch(error => {{
-                        document.getElementById('content').innerHTML = '<div class=\"bg-white shadow rounded-lg p-8\"><h1 class=\"text-2xl font-bold text-gray-900\">Error</h1><p class=\"mt-4 text-gray-700\">' + error.message + '</p></div>';
+                        document.getElementById('content').innerHTML = '<div class=\"bg-slate-800 shadow-xl rounded-lg p-8 border border-slate-700\"><h1 class=\"text-2xl font-bold text-slate-100\">Error</h1><p class=\"mt-4 text-slate-400\">' + error.message + '</p></div>';
                     }});
             ", url))) }
         },
@@ -105,15 +105,15 @@ pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases
         div class="max-w-4xl mx-auto px-4 py-4" {
             div class="flex items-start justify-between gap-4" {
                 div {
-                    h1 class="text-2xl font-bold text-gray-900" { "Upcoming releases" }
-                    p class="mt-1 text-sm text-gray-600" { "@" (username) " · " (country_name) }
+                    h1 class="text-2xl font-bold text-slate-100" { "Upcoming releases" }
+                    p class="mt-1 text-sm text-slate-400" { "@" (username) " · " (country_name) }
                 }
-                a class="text-sm text-blue-600 hover:text-blue-800" href="/" { "New search" }
+                a class="text-sm text-orange-500 hover:text-orange-400" href="/" { "New search" }
             }
 
             @if films.is_empty() {
-                div class="mt-4 bg-white shadow rounded-lg p-4" {
-                    p class="text-gray-600" { "No upcoming theatrical or streaming releases found." }
+                div class="mt-4 bg-slate-800 shadow-xl rounded-lg p-4 border border-slate-700" {
+                    p class="text-slate-400" { "No upcoming theatrical or streaming releases found." }
                 }
             } @else {
                 div class="mt-4 space-y-2" {
@@ -129,10 +129,10 @@ pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases
 pub fn error_fragment(message: String) -> String {
     content_div(maud! {
         div class="max-w-2xl mx-auto px-6 py-12" {
-            div class="bg-white shadow rounded-lg p-8" {
-                h1 class="text-2xl font-bold text-gray-900" { "Error" }
-                p class="mt-4 text-gray-700" { (message) }
-                a class="mt-6 inline-block text-blue-600 hover:text-blue-800" href="/" { "Back" }
+            div class="bg-slate-800 shadow-xl rounded-lg p-8 border border-slate-700" {
+                h1 class="text-2xl font-bold text-slate-100" { "Error" }
+                p class="mt-4 text-slate-400" { (message) }
+                a class="mt-6 inline-block text-orange-500 hover:text-orange-400" href="/" { "Back" }
             }
         }
     })
@@ -142,12 +142,12 @@ pub fn error_page(message: String) -> String {
     page(
         "Error",
         maud! {
-            div class="min-h-screen bg-gray-50 flex items-center justify-center" {
+            div class="min-h-screen bg-slate-900 flex items-center justify-center" {
                 div class="max-w-xl w-full px-6" {
-                    div class="bg-white shadow rounded-lg p-8" {
-                        h1 class="text-2xl font-bold text-gray-900" { "Error" }
-                        p class="mt-4 text-gray-700" { (message) }
-                        a class="mt-6 inline-block text-blue-600 hover:text-blue-800" href="/" { "Back" }
+                    div class="bg-slate-800 shadow-xl rounded-lg p-8 border border-slate-700" {
+                        h1 class="text-2xl font-bold text-slate-100" { "Error" }
+                        p class="mt-4 text-slate-400" { (message) }
+                        a class="mt-6 inline-block text-orange-500 hover:text-orange-400" href="/" { "Back" }
                     }
                 }
             }
@@ -181,7 +181,7 @@ fn film_card(film: &FilmWithReleases) -> impl Renderable + '_ {
     let letterboxd_url = format!("https://letterboxd.com/film/{}/", film.letterboxd_slug);
 
     maud! {
-        div class="bg-white shadow rounded p-3 flex gap-3" {
+        div class="bg-slate-800 shadow-xl rounded p-3 flex gap-3 border border-slate-700" {
             @if let Some(poster_path) = &film.poster_path {
                 a
                     class="block flex-shrink-0 w-20 h-30"
@@ -196,23 +196,23 @@ fn film_card(film: &FilmWithReleases) -> impl Renderable + '_ {
                         loading="lazy";
                 }
             } @else {
-                div class="flex-shrink-0 w-20 h-30 bg-gray-200 rounded flex items-center justify-center" {
-                    span class="text-xs text-gray-400" { "No poster" }
+                div class="flex-shrink-0 w-20 h-30 bg-slate-700 rounded flex items-center justify-center border border-slate-600" {
+                    span class="text-xs text-slate-500" { "No poster" }
                 }
             }
             div class="flex-1 min-w-0" {
                 div class="flex items-start justify-between gap-2" {
                     div class="flex-1 min-w-0" {
                         h2 class="text-lg font-semibold" {
-                            a class="text-gray-900 hover:text-blue-600" href=(letterboxd_url) target="_blank" rel="noopener noreferrer" {
+                            a class="text-slate-100 hover:text-orange-500" href=(letterboxd_url) target="_blank" rel="noopener noreferrer" {
                                 (film.title)
                                 @if let Some(year) = film.year {
-                                    span class="ml-1.5 font-normal text-gray-500" { "(" (year) ")" }
+                                    span class="ml-1.5 font-normal text-slate-400" { "(" (year) ")" }
                                 }
                             }
                         }
                         div class="mt-0.5 text-xs" {
-                            a class="text-gray-500 hover:text-gray-700" href=(format!("https://www.themoviedb.org/movie/{}", film.tmdb_id)) target="_blank" rel="noopener noreferrer" {
+                            a class="text-slate-500 hover:text-slate-400" href=(format!("https://www.themoviedb.org/movie/{}", film.tmdb_id)) target="_blank" rel="noopener noreferrer" {
                                 "TMDB"
                             }
                         }
@@ -234,22 +234,22 @@ fn release_list<'a>(
     kind: ReleaseType,
 ) -> impl Renderable + 'a {
     let border = match kind {
-        ReleaseType::Theatrical => "border-purple-500",
-        ReleaseType::Digital => "border-blue-500",
+        ReleaseType::Theatrical => "border-purple-400",
+        ReleaseType::Digital => "border-blue-400",
     };
 
     maud! {
         div class=(format!("border-l-3 {} pl-2.5", border)) {
-            h3 class="text-xs font-semibold text-gray-700 uppercase tracking-wide" { (label) }
+            h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wide" { (label) }
             @if releases.is_empty() {
-                p class="mt-1 text-sm text-gray-500" { "—" }
+                p class="mt-1 text-sm text-slate-500" { "—" }
             } @else {
                 ul class="mt-1 space-y-0.5" {
                     @for rel in releases {
-                        li class="text-sm text-gray-700" {
+                        li class="text-sm text-slate-300" {
                             span class="font-medium" { (format_date(rel)) }
                             @if let Some(note) = &rel.note {
-                                span class="text-gray-500" { " · " (note) }
+                                span class="text-slate-500" { " · " (note) }
                             }
                         }
                     }
