@@ -219,7 +219,7 @@ fn film_card(film: &FilmWithReleases) -> impl Renderable + '_ {
                     }
                 }
 
-                div class="mt-2 grid gap-3 md:grid-cols-2" {
+                div class="mt-2 grid grid-cols-2 gap-3" {
                     (release_list("Theatrical", &film.theatrical, ReleaseType::Theatrical))
                     (release_list("Streaming", &film.streaming, ReleaseType::Digital))
                 }
