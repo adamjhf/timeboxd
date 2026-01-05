@@ -371,7 +371,7 @@ fn release_list<'a>(
 }
 
 fn format_date(rel: &ReleaseDate) -> String {
-    rel.date.strftime("%Y-%m-%d").to_string()
+    rel.date.strftime("%-d %b %Y").to_string()
 }
 
 fn country_selector_script() -> impl Renderable {
