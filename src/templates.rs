@@ -177,29 +177,40 @@ fn content_div(inner: impl Renderable) -> String {
 }
 
 fn film_card(film: &FilmWithReleases) -> impl Renderable + '_ {
+    let letterboxd_url = format!("https://letterboxd.com/film/{}/", film.letterboxd_slug);
+
     maud! {
         div class="bg-white shadow rounded p-3 flex gap-3" {
             @if let Some(poster_path) = &film.poster_path {
-                img
-                    class="w-20 h-30 object-cover rounded flex-shrink-0"
-                    src=(format!("https://image.tmdb.org/t/p/w200{}", poster_path))
-                    alt=(format!("{} poster", film.title))
-                    loading="lazy";
+                a
+                    class="block flex-shrink-0 w-20 h-30"
+                    href=(letterboxd_url.clone())
+                    target="_blank"
+                    rel="noopener noreferrer"
+                {
+                    img
+                        class="w-full h-full object-cover rounded"
+                        src=(format!("https://image.tmdb.org/t/p/w200{}", poster_path))
+                        alt=(format!("{} poster", film.title))
+                        loading="lazy";
+                }
+            } @else {
+                div class="flex-shrink-0 w-20 h-30 bg-gray-200 rounded flex items-center justify-center" {
+                    span class="text-xs text-gray-400" { "No poster" }
+                }
             }
             div class="flex-1 min-w-0" {
                 div class="flex items-start justify-between gap-2" {
                     div class="flex-1 min-w-0" {
-                        h2 class="text-lg font-semibold text-gray-900" {
-                            (film.title)
-                            @if let Some(year) = film.year {
-                                span class="ml-1.5 font-normal text-gray-500" { "(" (year) ")" }
+                        h2 class="text-lg font-semibold" {
+                            a class="text-gray-900 hover:text-blue-600" href=(letterboxd_url) target="_blank" rel="noopener noreferrer" {
+                                (film.title)
+                                @if let Some(year) = film.year {
+                                    span class="ml-1.5 font-normal text-gray-500" { "(" (year) ")" }
+                                }
                             }
                         }
-                        div class="mt-0.5 flex gap-2 text-xs" {
-                            a class="text-gray-500 hover:text-gray-700" href=(format!("https://letterboxd.com/film/{}/", film.letterboxd_slug)) target="_blank" rel="noopener noreferrer" {
-                                "Letterboxd"
-                            }
-                            span class="text-gray-400" { "·" }
+                        div class="mt-0.5 text-xs" {
                             a class="text-gray-500 hover:text-gray-700" href=(format!("https://www.themoviedb.org/movie/{}", film.tmdb_id)) target="_blank" rel="noopener noreferrer" {
                                 "TMDB"
                             }
