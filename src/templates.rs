@@ -11,15 +11,15 @@ const DATASTAR_CDN: &str =
 
 pub fn index_page() -> String {
     page(
-        "Letterboxd Release Tracker",
+        "Timeboxd",
         maud! {
             div class="min-h-screen bg-slate-900" {
                 div class="max-w-2xl mx-auto px-6 py-12" {
                     div class="bg-slate-800 shadow-xl rounded-lg p-8 border border-slate-700" {
-                        h1 class="text-3xl font-bold text-slate-100" { "Letterboxd Release Tracker" }
-                        p class="mt-2 text-slate-400" { "Upcoming theatrical and streaming releases from your watchlist." }
+                        h1 class="text-3xl font-bold text-slate-100" { "Timeboxd" }
+                        p class="mt-2 text-slate-400" { "Upcoming film release dates for your Letterboxd watchlist." }
 
-                        form class="mt-8 space-y-6" method="post" action="/track" {
+                        form class="mt-8 space-y-6" method="post" action="/release-dates" {
                             div {
                                 label class="block text-sm font-medium text-slate-300" for="username" { "Letterboxd username" }
                                 input class="mt-2 w-full rounded-md border border-slate-600 bg-slate-700 text-slate-100 px-3 py-2 placeholder-slate-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500" name="username" id="username" required;
@@ -32,7 +32,6 @@ pub fn index_page() -> String {
                                         type="text"
                                         id="country-search"
                                         autocomplete="off"
-                                        placeholder="Search countries..."
                                         class="w-full rounded-md border border-slate-600 bg-slate-700 text-slate-100 px-3 py-2 placeholder-slate-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
                                         onkeyup="filterCountries()"
                                         onfocus="document.getElementById('country-dropdown').classList.remove('hidden')"
@@ -55,7 +54,7 @@ pub fn index_page() -> String {
                                 p class="mt-2 text-xs text-slate-500" { "Select a country to see release dates for that region." }
                             }
 
-                            button id="submit-button" class="w-full rounded-md bg-orange-600 px-4 py-2 font-semibold text-white hover:bg-orange-700" type="submit" { "Track" }
+                            button id="submit-button" class="w-full rounded-md bg-orange-600 px-4 py-2 font-semibold text-white hover:bg-orange-700" type="submit" { "Find release dates" }
                         }
                         (country_selector_script())
                     }
@@ -101,14 +100,20 @@ pub fn processing_page(username: &str, country: &str) -> String {
 
 pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases]) -> String {
     let country_name = get_country_name(country);
+    let letterboxd_user_url = format!("https://letterboxd.com/{}/", username);
     content_div(maud! {
         div class="max-w-4xl mx-auto px-4 py-4" {
             div class="flex items-start justify-between gap-4" {
                 div {
                     h1 class="text-2xl font-bold text-slate-100" { "Upcoming releases" }
-                    p class="mt-1 text-sm text-slate-400" { "@" (username) " · " (country_name) }
+                    p class="mt-1 text-sm text-slate-400" {
+                        a class="text-orange-500 hover:text-orange-400" href=(letterboxd_user_url) target="_blank" rel="noopener noreferrer" {
+                            "@" (username)
+                        }
+                        " · " (country_name)
+                    }
                 }
-                a class="text-sm text-orange-500 hover:text-orange-400" href="/" { "New search" }
+                a class="text-sm text-orange-500 hover:text-orange-400" href="/" { "New query" }
             }
 
             @if films.is_empty() {
@@ -184,16 +189,18 @@ fn film_card(film: &FilmWithReleases) -> impl Renderable + '_ {
         div class="bg-slate-800 shadow-xl rounded p-3 flex gap-3 border border-slate-700" {
             @if let Some(poster_path) = &film.poster_path {
                 a
-                    class="block flex-shrink-0 w-20 h-30"
+                    class="block flex-shrink-0 w-20"
                     href=(letterboxd_url.clone())
                     target="_blank"
                     rel="noopener noreferrer"
                 {
                     img
-                        class="w-full h-full object-cover rounded"
+                        class="w-20 h-30 object-cover rounded"
                         src=(format!("https://image.tmdb.org/t/p/w200{}", poster_path))
                         alt=(format!("{} poster", film.title))
-                        loading="lazy";
+                        loading="lazy"
+                        width="80"
+                        height="120";
                 }
             } @else {
                 div class="flex-shrink-0 w-20 h-30 bg-slate-700 rounded flex items-center justify-center border border-slate-600" {

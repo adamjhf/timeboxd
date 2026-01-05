@@ -63,7 +63,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/", get(routes::index))
-        .route("/track", axum::routing::post(routes::track))
+        .route("/release-dates", axum::routing::post(routes::track))
         .route("/process", get(routes::process))
         .with_state(state)
         .layer(CorsLayer::new().allow_origin(Any).allow_headers(Any))
