@@ -4,19 +4,22 @@ This document provides essential information for agentic coding assistants worki
 
 ## Project Overview
 
-timeboxd is a Rust web application built with:
+Timeboxd is a Rust web application that tracks upcoming theatrical and streaming releases for films in a user's Letterboxd watchlist. It fetches data from Letterboxd (via scraping) and TMDB API, caches results, and displays them in categorized sections with intelligent country fallbacks.
+
+Built with:
 - **Framework**: Axum (async web framework)
 - **Database**: SQLite with SeaORM
 - **External APIs**: TMDB API, Letterboxd scraping
-- **Templates**: Maud (compile-time HTML templates)
+- **Templates**: Hypertext (type-checked HTML with maud macro)
 - **Error Handling**: anyhow with custom AppError wrapper
 
 ## Development Environment
 
 The project uses devenv with Nix for development environment management. Key components:
-- Rust nightly channel
+- Rust 2024 edition
 - SQLite database
 - sea-orm-cli for database operations
+- Bacon for auto-reload development
 - Pre-commit hooks with rustfmt
 
 ### Environment Setup
@@ -114,7 +117,7 @@ cargo clippy --fix
 - Prefer functional patterns over imperative where appropriate
 - Use idiomatic iterators and collection methods (map, filter, fold, etc.)
 - Take advantage of Rust's ownership model for zero-cost abstractions
-- **Edition**: Rust 2024 edition
+- **Edition**: Rust 2024
 - **Formatting**: Enforced via rustfmt (automatic in pre-commit hooks)
 - **Linting**: Use clippy for additional code quality checks
 - **Error Handling**: Use `anyhow::Result<T>` for internal operations, `AppResult<T>` for HTTP handlers
@@ -131,6 +134,7 @@ cargo clippy --fix
 
   use anyhow::anyhow;
   use axum::{Extension, Router};
+  use hypertext::{maud, Renderable};
   use sea_orm::{Database, DatabaseConnection};
   use serde::{Deserialize, Serialize};
 
@@ -262,13 +266,18 @@ pub struct Model {
     pub tmdb_id: Option<i32>,
     pub title: String,
     pub year: Option<i32>,
+    pub poster_path: Option<String>,
     pub updated_at: i64,
 }
 
 // Use ActiveModel for inserts/updates
 let film = film_cache::ActiveModel {
     letterboxd_slug: Set(slug.to_string()),
+    tmdb_id: Set(tmdb_id),
     title: Set(title.to_string()),
+    year: Set(year.map(|y| y as i32)),
+    poster_path: Set(poster_path),
+    updated_at: Set(now),
     ..Default::default()
 };
 film.insert(&db).await?;
@@ -314,10 +323,15 @@ pub struct AppState {
 
 // Configuration from environment variables
 pub struct Config {
+    pub addr: SocketAddr,
+    pub tmdb_access_token: String,
+    pub tmdb_base_url: String,
     pub database_url: String,
-    pub tmdb_api_key: String,
-    pub cache_ttl_days: u32,
+    pub cache_ttl_days: i64,
+    pub release_cache_hours: i64,
+    pub tmdb_rps: u32,
     pub max_concurrent: usize,
+    pub letterboxd_delay_ms: u64,
 }
 ```
 
@@ -343,14 +357,19 @@ tracing_subscriber::fmt()
 - **main.rs**: Application entry point and setup
 - **config.rs**: Configuration loading and validation
 - **db.rs**: Database connection and migrations
-- **entities/**: SeaORM entity definitions
-- **models.rs**: Request/response models
+- **entities/**: SeaORM entity definitions (generated)
+  - **mod.rs**: Entity module exports
+  - **film_cache.rs**: Film cache entity
+  - **release_cache.rs**: Release cache entity
+  - **release_cache_meta.rs**: Release cache metadata entity
+- **models.rs**: Request/response models and data structures
 - **routes.rs**: HTTP route handlers
-- **processor.rs**: Business logic processing
-- **scraper.rs**: External data scraping
-- **tmdb.rs**: TMDB API client
-- **cache.rs**: Caching logic
-- **templates.rs**: HTML template rendering
+- **processor.rs**: Film processing and categorization logic
+- **scraper.rs**: Letterboxd watchlist scraping
+- **tmdb.rs**: TMDB API client with rate limiting
+- **cache.rs**: Caching layer for films and releases
+- **templates.rs**: HTML template rendering with Hypertext
+- **countries.rs**: Country code mappings
 - **error.rs**: Error types and conversions
 
 ### General Guidelines
@@ -392,18 +411,27 @@ src/
 ├── main.rs              # Application entry point
 ├── config.rs            # Configuration management
 ├── db.rs               # Database setup and migrations
-├── error.rs            # Error types and handling
+├── error.rs            # Error types and conversions
 ├── models.rs           # Request/response models
-├── entities/           # SeaORM entities
+├── countries.rs        # Country code mappings
+├── entities/           # SeaORM entities (generated)
 │   ├── mod.rs
 │   ├── film_cache.rs
-│   └── ...
+│   ├── release_cache.rs
+│   └── release_cache_meta.rs
 ├── routes.rs           # HTTP route handlers
-├── processor.rs        # Business logic
-├── scraper.rs          # Data scraping
-├── tmdb.rs             # TMDB API client
-├── cache.rs            # Caching layer
-└── templates.rs        # HTML templates
+├── processor.rs        # Film processing and categorization
+├── scraper.rs          # Letterboxd watchlist scraping
+├── tmdb.rs             # TMDB API client with rate limiting
+├── cache.rs            # Caching layer for films and releases
+└── templates.rs        # HTML template rendering with Hypertext
+
+migrations/             # Database migrations
+├── 001_initial.sql
+└── 002_add_poster_path.sql
+
+bacon.toml             # Development auto-reload configuration
+README.md              # Project documentation
 ```
 
 This document should be updated as the codebase evolves and new patterns emerge.
