@@ -143,10 +143,16 @@ pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases
         });
     }
 
-    let mut local_upcoming_films: Vec<_> =
-        films.iter().filter(|f| f.category == ReleaseCategory::LocalUpcoming).collect();
-    let mut local_already_available_films: Vec<_> =
-        films.iter().filter(|f| f.category == ReleaseCategory::LocalAlreadyAvailable).collect();
+    let mut local_upcoming_films: Vec<_> = films
+        .iter()
+        .filter(|f| f.category == ReleaseCategory::LocalUpcoming)
+        .filter(|f| f.year.is_some_and(|y| y >= min_year))
+        .collect();
+    let mut local_already_available_films: Vec<_> = films
+        .iter()
+        .filter(|f| f.category == ReleaseCategory::LocalAlreadyAvailable)
+        .filter(|f| f.year.is_some_and(|y| y >= min_year))
+        .collect();
     let mut no_releases: Vec<_> = films
         .iter()
         .filter(|f| f.category == ReleaseCategory::NoReleases)

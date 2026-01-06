@@ -127,7 +127,6 @@ impl TmdbClient {
             .await?;
 
         let today: Date = jiff::Zoned::now().into();
-        let one_year_ago = today - jiff::Span::new().years(1);
 
         let mut all_countries = Vec::new();
 
@@ -182,9 +181,12 @@ impl TmdbClient {
             let mut theatrical = theatrical_future;
             let mut streaming = streaming_future;
 
+            // Only include "Already available" if the latest release is within the last 2 years
+            let two_years_ago = today - jiff::Span::new().years(2);
+
             if has_past_theatrical && theatrical.is_empty() {
                 if let Some(latest) = theatrical_past.into_iter().max_by_key(|r| r.date) {
-                    if latest.date >= one_year_ago {
+                    if latest.date >= two_years_ago {
                         theatrical.push(ReleaseDate {
                             date: latest.date,
                             release_type: ReleaseType::Theatrical,
@@ -196,7 +198,7 @@ impl TmdbClient {
 
             if has_past_streaming && streaming.is_empty() {
                 if let Some(latest) = streaming_past.into_iter().max_by_key(|r| r.date) {
-                    if latest.date >= one_year_ago {
+                    if latest.date >= two_years_ago {
                         streaming.push(ReleaseDate {
                             date: latest.date,
                             release_type: ReleaseType::Digital,
