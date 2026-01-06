@@ -1,22 +1,25 @@
+# This is a configuration file for the bacon tool
+#
+# Complete help on configuration: https://dystroy.org/bacon/config/
+
 default_job = "run"
+env.CARGO_TERM_COLOR = "always"
+watch = ["Cargo.lock", "Cargo.toml", "migrations/", "src/"]
 
 [jobs.run]
 command = ["cargo", "run", "--color", "always"]
 need_stdout = true
-watch = ["src", "Cargo.toml", "migrations"]
-background = true
+background = false
+on_change_strategy = "kill_then_restart"
 
 [jobs.check]
 command = ["cargo", "check", "--color", "always"]
 need_stdout = false
-watch = ["src", "Cargo.toml"]
 
 [jobs.clippy]
 command = ["cargo", "clippy", "--color", "always"]
 need_stdout = false
-watch = ["src", "Cargo.toml"]
 
 [jobs.test]
 command = ["cargo", "test", "--color", "always"]
 need_stdout = true
-watch = ["src", "Cargo.toml"]
