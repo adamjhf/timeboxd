@@ -242,7 +242,44 @@ async fn get_releases_with_fallback(
     };
 
     if !us_theatrical.is_empty() || !us_streaming.is_empty() {
-        return Ok((us_theatrical, us_streaming, ReleaseCategory::US));
+        // Mark US releases as such
+        let mut marked_us_theatrical = us_theatrical;
+        let mut marked_us_streaming = us_streaming;
+
+        for rel in &mut marked_us_theatrical {
+            rel.note = Some("US".to_string());
+        }
+        for rel in &mut marked_us_streaming {
+            rel.note = Some("US".to_string());
+        }
+
+        // Separate US releases into upcoming vs already available
+        let (us_upcoming_theatrical, us_already_available_theatrical): (Vec<_>, Vec<_>) =
+            marked_us_theatrical
+                .into_iter()
+                .partition(|r| r.note.as_ref().map_or(true, |n| !n.contains("Already available")));
+        let (us_upcoming_streaming, us_already_available_streaming): (Vec<_>, Vec<_>) =
+            marked_us_streaming
+                .into_iter()
+                .partition(|r| r.note.as_ref().map_or(true, |n| !n.contains("Already available")));
+
+        // Put US releases in appropriate local sections
+        if !us_upcoming_theatrical.is_empty() || !us_upcoming_streaming.is_empty() {
+            let mut all_theatrical = us_upcoming_theatrical;
+            let mut all_streaming = us_upcoming_streaming;
+            all_theatrical.extend(us_already_available_theatrical);
+            all_streaming.extend(us_already_available_streaming);
+            return Ok((all_theatrical, all_streaming, ReleaseCategory::LocalUpcoming));
+        }
+
+        if !us_already_available_theatrical.is_empty() || !us_already_available_streaming.is_empty()
+        {
+            return Ok((
+                us_already_available_theatrical,
+                us_already_available_streaming,
+                ReleaseCategory::LocalAlreadyAvailable,
+            ));
+        }
     }
 
     Ok((vec![], vec![], ReleaseCategory::NoReleases))

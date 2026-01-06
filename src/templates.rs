@@ -147,7 +147,6 @@ pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases
         films.iter().filter(|f| f.category == ReleaseCategory::LocalUpcoming).collect();
     let mut local_already_available_films: Vec<_> =
         films.iter().filter(|f| f.category == ReleaseCategory::LocalAlreadyAvailable).collect();
-    let mut us_films: Vec<_> = films.iter().filter(|f| f.category == ReleaseCategory::US).collect();
     let mut no_releases: Vec<_> = films
         .iter()
         .filter(|f| f.category == ReleaseCategory::NoReleases)
@@ -156,7 +155,6 @@ pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases
 
     sort_by_first_release_date(&mut local_upcoming_films);
     sort_by_release_date(&mut local_already_available_films);
-    sort_by_first_release_date(&mut us_films);
     sort_by_year(&mut no_releases);
 
     content_div(maud! {
@@ -190,17 +188,7 @@ pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases
                     }
                 }
 
-                @if !us_films.is_empty() && country != "US" {
-                    div class="mt-6" {
-                        h2 class="text-lg font-semibold text-slate-200 mb-2" { "US releases" }
-                        p class="text-sm text-slate-400 mb-2" { "No local release dates found for these films" }
-                        div class="space-y-2" {
-                            @for film in &us_films {
-                                (film_card(film))
-                            }
-                        }
-                    }
-                }
+
 
                 @if !local_already_available_films.is_empty() {
                     div class="mt-6" {
@@ -225,7 +213,7 @@ pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases
                     }
                 }
 
-                @if local_upcoming_films.is_empty() && local_already_available_films.is_empty() && us_films.is_empty() && no_releases.is_empty() {
+                @if local_upcoming_films.is_empty() && local_already_available_films.is_empty() && no_releases.is_empty() {
                     div class="mt-4 bg-slate-800 shadow-xl rounded-lg p-4 border border-slate-700" {
                         p class="text-slate-400" { "No films processed." }
                     }

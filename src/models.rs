@@ -41,7 +41,6 @@ pub struct ReleaseDate {
 pub enum ReleaseCategory {
     LocalUpcoming,
     LocalAlreadyAvailable,
-    US,
     NoReleases,
 }
 
