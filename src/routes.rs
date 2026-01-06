@@ -5,16 +5,24 @@ use axum::{
     http::{HeaderValue, StatusCode},
     response::{Html, IntoResponse, Response},
 };
+use axum_extra::extract::{CookieJar, cookie::Cookie};
 use serde::Deserialize;
+use time::Duration;
 use tracing::{error, info};
 
 use crate::{AppState, error::AppResult, models::TrackRequest, templates};
 
-pub async fn index() -> Html<String> {
-    Html(templates::index_page())
+pub async fn index(jar: CookieJar) -> Html<String> {
+    let username = jar.get("username").map(|c| c.value().to_string());
+    let country = jar.get("country").map(|c| c.value().to_string());
+
+    Html(templates::index_page(username.as_deref(), country.as_deref()))
 }
 
-pub async fn track(Form(req): Form<TrackRequest>) -> AppResult<Html<String>> {
+pub async fn track(
+    jar: CookieJar,
+    Form(req): Form<TrackRequest>,
+) -> AppResult<(CookieJar, Html<String>)> {
     let username = req.username.trim().to_string();
     let country = req.country.trim().to_uppercase();
 
@@ -26,7 +34,23 @@ pub async fn track(Form(req): Form<TrackRequest>) -> AppResult<Html<String>> {
         return Err(anyhow::anyhow!("country must be a 2-letter code").into());
     }
 
-    Ok(Html(templates::processing_page(&username, &country)))
+    let max_age = Duration::days(365);
+
+    let username_cookie = Cookie::build(("username", username.clone()))
+        .path("/")
+        .max_age(max_age)
+        .same_site(cookie::SameSite::Lax)
+        .build();
+
+    let country_cookie = Cookie::build(("country", country.clone()))
+        .path("/")
+        .max_age(max_age)
+        .same_site(cookie::SameSite::Lax)
+        .build();
+
+    let jar = jar.add(username_cookie).add(country_cookie);
+
+    Ok((jar, Html(templates::processing_page(&username, &country))))
 }
 
 #[derive(Debug, Deserialize)]

@@ -9,7 +9,9 @@ const TAILWIND_CDN: &str = "https://cdn.tailwindcss.com";
 const DATASTAR_CDN: &str =
     "https://cdn.jsdelivr.net/npm/@sudodevnull/datastar@0.19.9/dist/datastar.js";
 
-pub fn index_page() -> String {
+pub fn index_page(saved_username: Option<&str>, saved_country: Option<&str>) -> String {
+    let country_name = saved_country.map(get_country_name);
+
     page(
         "Timeboxd",
         maud! {
@@ -22,7 +24,12 @@ pub fn index_page() -> String {
                         form class="mt-8 space-y-6" method="post" action="/release-dates" {
                             div {
                                 label class="block text-sm font-medium text-slate-300" for="username" { "Letterboxd username" }
-                                input class="mt-2 w-full rounded-md border border-slate-600 bg-slate-700 text-slate-100 px-3 py-2 placeholder-slate-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500" name="username" id="username" required;
+                                input
+                                    class="mt-2 w-full rounded-md border border-slate-600 bg-slate-700 text-slate-100 px-3 py-2 placeholder-slate-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                                    name="username"
+                                    id="username"
+                                    value=[saved_username]
+                                    required;
                             }
 
                             div {
@@ -33,10 +40,11 @@ pub fn index_page() -> String {
                                         id="country-search"
                                         autocomplete="off"
                                         class="w-full rounded-md border border-slate-600 bg-slate-700 text-slate-100 px-3 py-2 placeholder-slate-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                                        value=[country_name]
                                         onkeyup="filterCountries()"
                                         onfocus="document.getElementById('country-dropdown').classList.remove('hidden')"
                                         ;
-                                    input type="hidden" name="country" id="country" required;
+                                    input type="hidden" name="country" id="country" value=[saved_country] required;
                                     div id="country-dropdown" class="hidden absolute z-10 mt-1 w-full bg-slate-700 border border-slate-600 rounded-md shadow-lg max-h-60 overflow-y-auto" {
                                         @for country in COUNTRIES {
                                             div

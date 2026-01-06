@@ -117,6 +117,7 @@ cargo clippy --fix
 - Prefer functional patterns over imperative where appropriate
 - Use idiomatic iterators and collection methods (map, filter, fold, etc.)
 - Take advantage of Rust's ownership model for zero-cost abstractions
+- **Server-side first**: Prefer server-side logic over client-side JavaScript where possible
 - **Edition**: Rust 2024
 - **Formatting**: Enforced via rustfmt (automatic in pre-commit hooks)
 - **Linting**: Use clippy for additional code quality checks
