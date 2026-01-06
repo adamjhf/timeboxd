@@ -62,7 +62,7 @@ pub fn index_page(saved_username: Option<&str>, saved_country: Option<&str>) -> 
                                 p class="mt-2 text-xs text-slate-500" { "Select a country to see release dates for that region." }
                             }
 
-                            button id="submit-button" class="w-full rounded-md bg-orange-600 px-4 py-2 font-semibold text-white hover:bg-orange-700" type="submit" { "Find release dates" }
+                             button id="submit-button" class="w-full rounded-md bg-orange-600 px-4 py-2 font-semibold text-white hover:bg-orange-700 focus:outline-none focus:ring-1 focus:ring-orange-500" type="submit" { "Find release dates" }
                         }
                         (country_selector_script())
                     }
