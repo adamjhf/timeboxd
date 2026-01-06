@@ -408,30 +408,10 @@ tracing_subscriber::fmt()
 
 The application uses a **bulk caching strategy** for optimal performance:
 
-#### Film Cache
-- **Bulk lookup**: `CacheManager::get_films(&[String])` fetches multiple films in one query using `WHERE IN`
-- **Bulk write**: `CacheManager::upsert_films(Vec<FilmCacheData>)` batch inserts/updates in a single transaction
-- **TTL**: Configurable film cache TTL (days) with automatic expiry
-
-#### Release Cache
-- **Bulk lookup**: `CacheManager::get_releases(&[(i32, String)])` fetches multiple release sets in one query
-- **Bulk write**: `CacheManager::put_releases_multi_country()` handles batch release caching
-- **TTL**: Configurable release cache TTL (hours) with freshness checks
-- **Multi-country**: Pre-fetches fallback countries (NZ→AU→US, others→US) to avoid sequential lookups
-
-#### Performance Benefits
-- **Database queries**: Reduced from O(N×4) to O(3) total queries (99% reduction for large watchlists)
-- **API calls**: Only made for truly uncached data with better parallelization
-- **Memory efficient**: Minimal temporary memory usage for bulk operations
-- **Concurrent processing**: Parallel API calls for uncached data with configurable limits
-
-#### Processing Flow
-1. **Bulk cache check**: Single query for all film slugs
-2. **Resolve missing**: Parallel scraping/API calls only for uncached films
-3. **Bulk cache write**: Single transaction for new film data
-4. **Bulk release check**: Single query for all (tmdb_id, country) pairs
-5. **Fetch missing releases**: Parallel TMDB API calls for uncached releases
-6. **Assemble results**: Combine cached and fresh data
+- **Bulk operations**: Cache lookups and writes use batch queries (`WHERE IN`) to minimize database round trips
+- **TTL-based expiry**: Film cache (days) and release cache (hours) have configurable TTLs
+- **Country fallbacks**: Pre-fetches fallback countries (NZ→AU→US, others→US) in the same batch to avoid sequential lookups
+- **Empty result caching**: Films with no release dates are cached to prevent repeated API calls
 
 ## File Structure Conventions
 
