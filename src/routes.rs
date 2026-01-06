@@ -10,7 +10,12 @@ use serde::Deserialize;
 use time::Duration;
 use tracing::{error, info};
 
-use crate::{AppState, error::AppResult, models::TrackRequest, templates};
+use crate::{
+    AppState,
+    error::{AppResult, error_to_user_message},
+    models::TrackRequest,
+    templates,
+};
 
 pub async fn index(jar: CookieJar) -> Html<String> {
     let username = jar.get("username").map(|c| c.value().to_string());
@@ -114,7 +119,8 @@ pub async fn process(
         Ok(html) => html,
         Err(err) => {
             error!(username = %username, error = %err, "request failed");
-            templates::error_fragment(err.to_string())
+            let user_friendly_error = crate::error::error_to_user_message(&err);
+            templates::error_fragment(user_friendly_error)
         },
     };
 
