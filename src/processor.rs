@@ -197,23 +197,24 @@ async fn get_releases_with_fallback(
             .into_iter()
             .partition(|r| r.note.as_ref().map_or(true, |n| !n.contains("Already available")));
 
-    // Check for upcoming releases first
-    if !local_upcoming_theatrical.is_empty() || !local_upcoming_streaming.is_empty() {
-        let mut all_theatrical = local_upcoming_theatrical;
-        let mut all_streaming = local_upcoming_streaming;
-        all_theatrical.extend(local_already_available_theatrical);
-        all_streaming.extend(local_already_available_streaming);
-        return Ok((all_theatrical, all_streaming, ReleaseCategory::LocalUpcoming));
-    }
-
-    // Check for recent "Already available" releases
+    // Check for recent "Already available" releases first (prioritize over upcoming)
     if !local_already_available_theatrical.is_empty()
         || !local_already_available_streaming.is_empty()
     {
+        let mut all_theatrical = local_already_available_theatrical;
+        let mut all_streaming = local_already_available_streaming;
+        // Include any upcoming releases too, but categorize as already available
+        all_theatrical.extend(local_upcoming_theatrical);
+        all_streaming.extend(local_upcoming_streaming);
+        return Ok((all_theatrical, all_streaming, ReleaseCategory::LocalAlreadyAvailable));
+    }
+
+    // Check for upcoming releases only if no already available releases
+    if !local_upcoming_theatrical.is_empty() || !local_upcoming_streaming.is_empty() {
         return Ok((
-            local_already_available_theatrical,
-            local_already_available_streaming,
-            ReleaseCategory::LocalAlreadyAvailable,
+            local_upcoming_theatrical,
+            local_upcoming_streaming,
+            ReleaseCategory::LocalUpcoming,
         ));
     }
 
@@ -221,64 +222,144 @@ async fn get_releases_with_fallback(
         return Ok((vec![], vec![], ReleaseCategory::NoReleases));
     }
 
-    debug!(slug = %slug, "no local releases found, trying US");
+    // Special logic for New Zealand: try Australia first, then US
+    if country == "NZ" {
+        debug!(slug = %slug, "no NZ releases found, trying Australia");
 
-    let (us_theatrical, us_streaming) = if let Some(cached) =
-        cache.get_releases(tmdb_id, "US").await?
-    {
-        debug!(slug = %slug, "using cached US release dates");
-        cached
-    } else {
-        let result = tmdb.get_release_dates(tmdb_id, "US").await?;
-        let us_country = result.all_countries.iter().find(|c| c.country == "US");
-
-        if let Some(us) = us_country {
-            debug!(slug = %slug, theatrical = us.theatrical.len(), streaming = us.streaming.len(), "fetched US release dates");
-            (us.theatrical.clone(), us.streaming.clone())
-        } else {
-            debug!(slug = %slug, "no US releases found in cached data");
-            (vec![], vec![])
-        }
-    };
-
-    if !us_theatrical.is_empty() || !us_streaming.is_empty() {
-        // Mark US releases as such
-        let mut marked_us_theatrical = us_theatrical;
-        let mut marked_us_streaming = us_streaming;
-
-        for rel in &mut marked_us_theatrical {
-            rel.note = Some("US".to_string());
-        }
-        for rel in &mut marked_us_streaming {
-            rel.note = Some("US".to_string());
-        }
-
-        // Separate US releases into upcoming vs already available
-        let (us_upcoming_theatrical, us_already_available_theatrical): (Vec<_>, Vec<_>) =
-            marked_us_theatrical
-                .into_iter()
-                .partition(|r| r.note.as_ref().map_or(true, |n| !n.contains("Already available")));
-        let (us_upcoming_streaming, us_already_available_streaming): (Vec<_>, Vec<_>) =
-            marked_us_streaming
-                .into_iter()
-                .partition(|r| r.note.as_ref().map_or(true, |n| !n.contains("Already available")));
-
-        // Put US releases in appropriate local sections
-        if !us_upcoming_theatrical.is_empty() || !us_upcoming_streaming.is_empty() {
-            let mut all_theatrical = us_upcoming_theatrical;
-            let mut all_streaming = us_upcoming_streaming;
-            all_theatrical.extend(us_already_available_theatrical);
-            all_streaming.extend(us_already_available_streaming);
-            return Ok((all_theatrical, all_streaming, ReleaseCategory::LocalUpcoming));
-        }
-
-        if !us_already_available_theatrical.is_empty() || !us_already_available_streaming.is_empty()
+        let (au_theatrical, au_streaming) = if let Some(cached) =
+            cache.get_releases(tmdb_id, "AU").await?
         {
-            return Ok((
-                us_already_available_theatrical,
-                us_already_available_streaming,
-                ReleaseCategory::LocalAlreadyAvailable,
-            ));
+            debug!(slug = %slug, "using cached Australia release dates");
+            cached
+        } else {
+            let result = tmdb.get_release_dates(tmdb_id, "AU").await?;
+            let au_country = result.all_countries.iter().find(|c| c.country == "AU");
+
+            if let Some(au) = au_country {
+                debug!(slug = %slug, theatrical = au.theatrical.len(), streaming = au.streaming.len(), "fetched Australia release dates");
+                (au.theatrical.clone(), au.streaming.clone())
+            } else {
+                debug!(slug = %slug, "no Australia releases found in cached data");
+                (vec![], vec![])
+            }
+        };
+
+        if !au_theatrical.is_empty() || !au_streaming.is_empty() {
+            // Separate AU releases into upcoming vs already available FIRST
+            let (mut au_upcoming_theatrical, mut au_already_available_theatrical): (
+                Vec<_>,
+                Vec<_>,
+            ) = au_theatrical
+                .into_iter()
+                .partition(|r| r.note.as_ref().map_or(true, |n| !n.contains("Already available")));
+            let (mut au_upcoming_streaming, mut au_already_available_streaming): (Vec<_>, Vec<_>) =
+                au_streaming.into_iter().partition(|r| {
+                    r.note.as_ref().map_or(true, |n| !n.contains("Already available"))
+                });
+
+            // Then mark with country code
+            for rel in &mut au_upcoming_theatrical {
+                rel.note = Some("AU".to_string());
+            }
+            for rel in &mut au_already_available_theatrical {
+                rel.note = Some("AU".to_string());
+            }
+            for rel in &mut au_upcoming_streaming {
+                rel.note = Some("AU".to_string());
+            }
+            for rel in &mut au_already_available_streaming {
+                rel.note = Some("AU".to_string());
+            }
+
+            // Put AU releases in appropriate local sections (prioritize already available)
+            if !au_already_available_theatrical.is_empty()
+                || !au_already_available_streaming.is_empty()
+            {
+                let mut all_theatrical = au_already_available_theatrical;
+                let mut all_streaming = au_already_available_streaming;
+                // Include any upcoming releases too, but categorize as already available
+                all_theatrical.extend(au_upcoming_theatrical);
+                all_streaming.extend(au_upcoming_streaming);
+                return Ok((all_theatrical, all_streaming, ReleaseCategory::LocalAlreadyAvailable));
+            }
+
+            if !au_upcoming_theatrical.is_empty() || !au_upcoming_streaming.is_empty() {
+                return Ok((
+                    au_upcoming_theatrical,
+                    au_upcoming_streaming,
+                    ReleaseCategory::LocalUpcoming,
+                ));
+            }
+        }
+
+        // If no Australia releases, fall back to US
+        debug!(slug = %slug, "no Australia releases found, trying US");
+
+        let (us_theatrical, us_streaming) = if let Some(cached) =
+            cache.get_releases(tmdb_id, "US").await?
+        {
+            debug!(slug = %slug, "using cached US release dates");
+            cached
+        } else {
+            let result = tmdb.get_release_dates(tmdb_id, "US").await?;
+            let us_country = result.all_countries.iter().find(|c| c.country == "US");
+
+            if let Some(us) = us_country {
+                debug!(slug = %slug, theatrical = us.theatrical.len(), streaming = us.streaming.len(), "fetched US release dates");
+                (us.theatrical.clone(), us.streaming.clone())
+            } else {
+                debug!(slug = %slug, "no US releases found in cached data");
+                (vec![], vec![])
+            }
+        };
+
+        if !us_theatrical.is_empty() || !us_streaming.is_empty() {
+            // Separate US releases into upcoming vs already available FIRST
+            let (mut us_upcoming_theatrical, mut us_already_available_theatrical): (
+                Vec<_>,
+                Vec<_>,
+            ) = us_theatrical
+                .into_iter()
+                .partition(|r| r.note.as_ref().map_or(true, |n| !n.contains("Already available")));
+            let (mut us_upcoming_streaming, mut us_already_available_streaming): (Vec<_>, Vec<_>) =
+                us_streaming.into_iter().partition(|r| {
+                    r.note.as_ref().map_or(true, |n| !n.contains("Already available"))
+                });
+
+            // Then mark with country code
+            let country_code = "US";
+            for rel in &mut us_upcoming_theatrical {
+                rel.note = Some(country_code.to_string());
+            }
+            for rel in &mut us_already_available_theatrical {
+                rel.note = Some(country_code.to_string());
+            }
+            for rel in &mut us_upcoming_streaming {
+                rel.note = Some(country_code.to_string());
+            }
+            for rel in &mut us_already_available_streaming {
+                rel.note = Some(country_code.to_string());
+            }
+
+            // Put US releases in appropriate local sections (prioritize already available)
+            if !us_already_available_theatrical.is_empty()
+                || !us_already_available_streaming.is_empty()
+            {
+                let mut all_theatrical = us_already_available_theatrical;
+                let mut all_streaming = us_already_available_streaming;
+                // Include any upcoming releases too, but categorize as already available
+                all_theatrical.extend(us_upcoming_theatrical);
+                all_streaming.extend(us_upcoming_streaming);
+                return Ok((all_theatrical, all_streaming, ReleaseCategory::LocalAlreadyAvailable));
+            }
+
+            if !us_upcoming_theatrical.is_empty() || !us_upcoming_streaming.is_empty() {
+                return Ok((
+                    us_upcoming_theatrical,
+                    us_upcoming_streaming,
+                    ReleaseCategory::LocalUpcoming,
+                ));
+            }
         }
     }
 

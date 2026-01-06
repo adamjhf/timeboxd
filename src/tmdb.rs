@@ -86,7 +86,7 @@ impl TmdbClient {
     ) -> AppResult<ReleaseDatesResult> {
         // Use mock data if access token is not provided
         if self.access_token.trim().is_empty() {
-            let today: Date = jiff::Zoned::now().into();
+            let today: Date = jiff::Timestamp::now().to_zoned(jiff::tz::TimeZone::UTC).date();
             let future_date = today + jiff::Span::new().years(1);
 
             let theatrical = vec![ReleaseDate {
