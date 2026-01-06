@@ -7,7 +7,7 @@ use governor::{
 };
 use jiff::{civil::Date, fmt::temporal::DateTimeParser};
 use serde::Deserialize;
-use tracing::warn;
+use tracing::{debug, warn};
 
 use crate::{
     error::AppResult,
@@ -43,6 +43,8 @@ impl TmdbClient {
 
         self.limiter.until_ready().await;
 
+        debug!(title = %title, year = ?year, "TMDB API: searching movie");
+
         let url = format!("{}/search/movie", self.base_url.trim_end_matches('/'));
         let mut req = self
             .client
@@ -54,7 +56,9 @@ impl TmdbClient {
         }
 
         let resp: SearchResponse = req.send().await?.error_for_status()?.json().await?;
-        Ok(resp.results.into_iter().next().map(|m| (m.id, m.poster_path)))
+        let result = resp.results.into_iter().next().map(|m| (m.id, m.poster_path));
+        debug!(title = %title, result = ?result, "TMDB API: search result");
+        Ok(result)
     }
 
     pub async fn get_movie_details(&self, tmdb_id: i32) -> AppResult<Option<String>> {
@@ -63,6 +67,8 @@ impl TmdbClient {
         }
 
         self.limiter.until_ready().await;
+
+        debug!(tmdb_id = tmdb_id, "TMDB API: fetching movie details");
 
         let url = format!("{}/movie/{}", self.base_url.trim_end_matches('/'), tmdb_id);
 
@@ -76,6 +82,7 @@ impl TmdbClient {
             .json()
             .await?;
 
+        debug!(tmdb_id = tmdb_id, poster_path = ?resp.poster_path, "TMDB API: movie details result");
         Ok(resp.poster_path)
     }
 
@@ -112,6 +119,8 @@ impl TmdbClient {
         }
 
         self.limiter.until_ready().await;
+
+        debug!(tmdb_id = tmdb_id, country = %country, "TMDB API: fetching release dates");
 
         let url =
             format!("{}/movie/{}/release_dates", self.base_url.trim_end_matches('/'), tmdb_id);
@@ -219,6 +228,15 @@ impl TmdbClient {
                     streaming: vec![],
                 }
             });
+
+        debug!(
+            tmdb_id = tmdb_id,
+            country = %country,
+            all_countries_count = all_countries.len(),
+            requested_theatrical = requested_country.theatrical.len(),
+            requested_streaming = requested_country.streaming.len(),
+            "TMDB API: release dates result"
+        );
 
         Ok(ReleaseDatesResult { requested_country, all_countries })
     }
