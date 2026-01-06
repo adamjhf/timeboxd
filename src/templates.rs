@@ -173,16 +173,17 @@ pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases
 
     content_div(maud! {
         div class="max-w-4xl mx-auto px-4 py-4" {
-            div class="flex items-start justify-between gap-4" {
-                div {
-                    h1 class="text-2xl font-bold text-slate-100" { "Upcoming releases" }
-                    p class="mt-1 text-sm text-slate-400" {
-                        a class="text-orange-500 hover:text-orange-400" href=(letterboxd_user_url) target="_blank" rel="noopener noreferrer" {
-                            "@" (username)
-                        }
-                        " · " (country_name)
-                    }
-                }
+             div class="flex items-start justify-between gap-4" {
+                 div {
+                     h1 class="text-2xl font-bold text-slate-100" { "Timeboxd" }
+                     p class="mt-1 text-sm text-slate-400" { "Local release dates for your Letterboxd watchlist" }
+                     p class="mt-1 text-sm text-slate-400" {
+                         a class="text-orange-500 hover:text-orange-400" href=(letterboxd_user_url) target="_blank" rel="noopener noreferrer" {
+                             "@" (username)
+                         }
+                         " · " (country_name)
+                     }
+                 }
                 a class="text-sm text-orange-500 hover:text-orange-400" href="/" { "New query" }
             }
 
