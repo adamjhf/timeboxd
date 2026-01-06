@@ -203,10 +203,30 @@ async fn get_releases_with_fallback(
     {
         let mut all_theatrical = local_already_available_theatrical;
         let mut all_streaming = local_already_available_streaming;
-        // Include any upcoming releases too, but categorize as already available
+        // Mark local releases with country code and include any upcoming releases too
+        for rel in &mut all_theatrical {
+            rel.note = Some(country.to_string());
+        }
+        for rel in &mut all_streaming {
+            rel.note = Some(country.to_string());
+        }
         all_theatrical.extend(local_upcoming_theatrical);
         all_streaming.extend(local_upcoming_streaming);
         return Ok((all_theatrical, all_streaming, ReleaseCategory::LocalAlreadyAvailable));
+    }
+
+    // Check for upcoming releases only if no already available releases
+    if !local_upcoming_theatrical.is_empty() || !local_upcoming_streaming.is_empty() {
+        // Mark local releases with country code
+        let mut all_theatrical = local_upcoming_theatrical;
+        let mut all_streaming = local_upcoming_streaming;
+        for rel in &mut all_theatrical {
+            rel.note = Some(country.to_string());
+        }
+        for rel in &mut all_streaming {
+            rel.note = Some(country.to_string());
+        }
+        return Ok((all_theatrical, all_streaming, ReleaseCategory::LocalUpcoming));
     }
 
     // Check for upcoming releases only if no already available releases

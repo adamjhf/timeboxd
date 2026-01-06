@@ -185,7 +185,12 @@ pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases
             } @else {
                 @if !local_upcoming_films.is_empty() {
                     div class="mt-4" {
-                        h2 class="text-lg font-semibold text-slate-200 mb-2" { (country_name) " upcoming releases" }
+                        h2 class="text-lg font-semibold text-slate-200 mb-2" { "Upcoming releases" }
+                        @if country == "NZ" {
+                            p class="text-sm text-slate-400 mb-2" { "Falls back to Australia then US release dates if no local dates found" }
+                        } @else {
+                            p class="text-sm text-slate-400 mb-2" { "Falls back to US release dates if no local dates found" }
+                        }
                         div class="space-y-2" {
                             @for film in &local_upcoming_films {
                                 (film_card(film))
@@ -198,8 +203,13 @@ pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases
 
                 @if !local_already_available_films.is_empty() {
                     div class="mt-6" {
-                        h2 class="text-lg font-semibold text-slate-200 mb-2" { (country_name) " recent releases" }
+                        h2 class="text-lg font-semibold text-slate-200 mb-2" { "Recent releases" }
                         p class="text-sm text-slate-400 mb-2" { "Films released in the last year" }
+                        @if country == "NZ" {
+                            p class="text-sm text-slate-400 mb-2" { "Falls back to Australia then US release dates if no local dates found" }
+                        } @else {
+                            p class="text-sm text-slate-400 mb-2" { "Falls back to US release dates if no local dates found" }
+                        }
                         div class="space-y-2" {
                             @for film in &local_already_available_films {
                                 (film_card(film))
