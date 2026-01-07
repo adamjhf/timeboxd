@@ -44,42 +44,31 @@
 
         craneLib = (crane.mkLib pkgs).overrideToolchain buildRustToolchain;
 
-        commonArgs =
-          let
-            includeFilter = path: _type: builtins.match ".*/migrations/.*$" path != null;
-            crateFilter = path: type: (includeFilter path type) || (craneLib.filterCargoSources path type);
-          in
-          {
-            src = pkgs.lib.cleanSourceWith {
-              src = craneLib.path ./.;
-              filter = crateFilter;
-            };
-            strictDeps = true;
-            doCheck = false;
-            cargoCheckCommand = "${pkgs.coreutils}/bin/true";
+        commonArgs = {
+          src = craneLib.cleanCargoSource ./.;
+          strictDeps = true;
+          doCheck = false;
+          cargoCheckCommand = "${pkgs.coreutils}/bin/true";
 
-            buildInputs = with pkgs; lib.optionals stdenv.isDarwin [ libiconv ];
+          buildInputs = with pkgs; lib.optionals stdenv.isDarwin [ libiconv ];
 
-            nativeBuildInputs =
-              with pkgs;
-              lib.optionals stdenv.isLinux [
-                clang
-                mold
-              ];
+          nativeBuildInputs =
+            with pkgs;
+            lib.optionals stdenv.isLinux [
+              clang
+              mold
+            ];
 
-            CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER =
-              if !pkgs.stdenv.isDarwin then "${pkgs.clang}/bin/clang" else null;
-            CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS =
-              if !pkgs.stdenv.isDarwin then "-C link-arg=-fuse-ld=${pkgs.mold}/bin/mold" else null;
-          };
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER =
+            if !pkgs.stdenv.isDarwin then "${pkgs.clang}/bin/clang" else null;
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS =
+            if !pkgs.stdenv.isDarwin then "-C link-arg=-fuse-ld=${pkgs.mold}/bin/mold" else null;
+        };
 
         timeboxd = craneLib.buildPackage (
           commonArgs
           // {
             cargoArtifacts = craneLib.buildDepsOnly commonArgs;
-            postInstall = ''
-              cp -r migrations $out
-            '';
           }
         );
       in
