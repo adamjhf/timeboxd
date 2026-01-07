@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Form, Query, State},
+    extract::{Query, State},
     http::{HeaderValue, StatusCode},
     response::{Html, IntoResponse, Response},
 };
@@ -10,12 +10,7 @@ use serde::Deserialize;
 use time::Duration;
 use tracing::{error, info};
 
-use crate::{
-    AppState,
-    error::{AppResult, error_to_user_message},
-    models::TrackRequest,
-    templates,
-};
+use crate::{AppState, error::AppResult, models::TrackRequest, templates};
 
 pub async fn index(jar: CookieJar) -> Html<String> {
     let username = jar.get("username").map(|c| c.value().to_string());
@@ -26,7 +21,7 @@ pub async fn index(jar: CookieJar) -> Html<String> {
 
 pub async fn track(
     jar: CookieJar,
-    Form(req): Form<TrackRequest>,
+    Query(req): Query<TrackRequest>,
 ) -> AppResult<(CookieJar, Html<String>)> {
     let username = req.username.trim().to_string();
     let country = req.country.trim().to_uppercase();

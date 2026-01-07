@@ -21,7 +21,7 @@ pub fn index_page(saved_username: Option<&str>, saved_country: Option<&str>) -> 
                         h1 class="text-3xl font-bold text-slate-100" { "Timeboxd" }
                         p class="mt-2 text-slate-400" { "Upcoming film release dates for your Letterboxd watchlist." }
 
-                        form class="mt-8 space-y-6" method="post" action="/release-dates" {
+                        form class="mt-8 space-y-6" method="get" action="/release-dates" {
                             div {
                                 label class="block text-sm font-medium text-slate-300" for="username" { "Letterboxd username" }
                                 input
