@@ -11,7 +11,9 @@ use tracing::{debug, warn};
 
 use crate::{
     error::AppResult,
-    models::{CountryReleases, ReleaseDate, ReleaseDatesResult, ReleaseType},
+    models::{
+        CountryReleases, ProviderType, ReleaseDate, ReleaseDatesResult, ReleaseType, WatchProvider,
+    },
 };
 
 pub struct TmdbClient {
@@ -240,6 +242,102 @@ impl TmdbClient {
 
         Ok(ReleaseDatesResult { requested_country, all_countries })
     }
+
+    pub async fn get_watch_providers(
+        &self,
+        tmdb_id: i32,
+        country: &str,
+    ) -> AppResult<(Vec<WatchProvider>, Option<String>)> {
+        if self.access_token.trim().is_empty() {
+            return Ok((
+                vec![WatchProvider {
+                    provider_id: 8,
+                    provider_name: "Netflix".to_string(),
+                    logo_path: "/pbpMk2JmcoNnQwx5JGpXngfoWtp.jpg".to_string(),
+                    link: None,
+                    provider_type: ProviderType::Stream,
+                }],
+                Some("https://www.themoviedb.org/movie/550/watch".to_string()),
+            ));
+        }
+
+        self.limiter.until_ready().await;
+
+        debug!(tmdb_id = tmdb_id, country = %country, "TMDB API: fetching watch providers");
+
+        let url =
+            format!("{}/movie/{}/watch/providers", self.base_url.trim_end_matches('/'), tmdb_id);
+
+        let resp: WatchProvidersResponse = self
+            .client
+            .get(url)
+            .bearer_auth(&self.access_token)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+
+        let country_data = resp.results.get(country);
+
+        let (providers, link) = match country_data {
+            Some(data) => {
+                let mut providers = Vec::new();
+
+                if let Some(flatrate) = &data.flatrate {
+                    for p in flatrate {
+                        providers.push(WatchProvider {
+                            provider_id: p.provider_id,
+                            provider_name: p.provider_name.clone(),
+                            logo_path: p.logo_path.clone(),
+                            link: data.link.clone(),
+                            provider_type: ProviderType::Stream,
+                        });
+                    }
+                }
+
+                if let Some(rent) = &data.rent {
+                    for p in rent {
+                        if !providers.iter().any(|existing| existing.provider_id == p.provider_id) {
+                            providers.push(WatchProvider {
+                                provider_id: p.provider_id,
+                                provider_name: p.provider_name.clone(),
+                                logo_path: p.logo_path.clone(),
+                                link: data.link.clone(),
+                                provider_type: ProviderType::Rent,
+                            });
+                        }
+                    }
+                }
+
+                if let Some(buy) = &data.buy {
+                    for p in buy {
+                        if !providers.iter().any(|existing| existing.provider_id == p.provider_id) {
+                            providers.push(WatchProvider {
+                                provider_id: p.provider_id,
+                                provider_name: p.provider_name.clone(),
+                                logo_path: p.logo_path.clone(),
+                                link: data.link.clone(),
+                                provider_type: ProviderType::Buy,
+                            });
+                        }
+                    }
+                }
+
+                (providers, data.link.clone())
+            },
+            None => (vec![], None),
+        };
+
+        debug!(
+            tmdb_id = tmdb_id,
+            country = %country,
+            provider_count = providers.len(),
+            "TMDB API: watch providers result"
+        );
+
+        Ok((providers, link))
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -276,4 +374,24 @@ struct ReleaseDateEntry {
     #[serde(rename = "type")]
     type_: i32,
     note: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct WatchProvidersResponse {
+    results: std::collections::HashMap<String, WatchProviderCountry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct WatchProviderCountry {
+    link: Option<String>,
+    flatrate: Option<Vec<WatchProviderEntry>>,
+    rent: Option<Vec<WatchProviderEntry>>,
+    buy: Option<Vec<WatchProviderEntry>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct WatchProviderEntry {
+    provider_id: i32,
+    provider_name: String,
+    logo_path: String,
 }

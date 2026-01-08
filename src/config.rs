@@ -10,6 +10,7 @@ pub struct Config {
     pub database_url: String,
     pub cache_ttl_days: i64,
     pub release_cache_hours: i64,
+    pub provider_cache_days: i64,
     pub tmdb_rps: u32,
     pub max_concurrent: usize,
     pub letterboxd_delay_ms: u64,
@@ -37,6 +38,9 @@ impl Config {
         let release_cache_hours: i64 =
             std::env::var("RELEASE_CACHE_HOURS").ok().and_then(|s| s.parse().ok()).unwrap_or(24);
 
+        let provider_cache_days: i64 =
+            std::env::var("PROVIDER_CACHE_DAYS").ok().and_then(|s| s.parse().ok()).unwrap_or(7);
+
         let tmdb_rps: u32 =
             std::env::var("TMDB_RPS").ok().and_then(|s| s.parse().ok()).unwrap_or(4);
 
@@ -53,6 +57,7 @@ impl Config {
             database_url,
             cache_ttl_days,
             release_cache_hours,
+            provider_cache_days,
             tmdb_rps,
             max_concurrent,
             letterboxd_delay_ms,

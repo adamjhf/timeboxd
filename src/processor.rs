@@ -6,7 +6,10 @@ use tracing::{debug, warn};
 use crate::{
     cache::{CacheManager, FilmCacheData},
     error::AppResult,
-    models::{CountryReleases, FilmWithReleases, ReleaseCategory, ReleaseDate, WishlistFilm},
+    models::{
+        CountryReleases, FilmWithReleases, ReleaseCategory, ReleaseDate, WatchProvider,
+        WishlistFilm,
+    },
     scraper,
     tmdb::TmdbClient,
 };
@@ -186,7 +189,69 @@ pub async fn process(
             theatrical,
             streaming,
             category,
+            streaming_providers: vec![],
         });
+    }
+
+    debug!(result_count = results.len(), "completed processing releases");
+
+    let today: jiff::civil::Date = jiff::Zoned::now().into();
+
+    let provider_requests = build_provider_requests(&results, country, &today);
+    debug!(provider_requests = provider_requests.len(), "provider cache requests");
+
+    let cached_providers = cache.get_providers(&provider_requests).await?;
+    debug!(cached_providers_count = cached_providers.len(), "providers found in cache");
+
+    let uncached_provider_requests: Vec<(i32, String)> = provider_requests
+        .iter()
+        .filter(|req| !cached_providers.contains_key(req))
+        .cloned()
+        .collect();
+    debug!(
+        uncached_provider_requests = uncached_provider_requests.len(),
+        "uncached provider requests"
+    );
+
+    let mut new_providers: HashMap<(i32, String), Vec<WatchProvider>> = HashMap::new();
+    if !uncached_provider_requests.is_empty() {
+        let items: Vec<AppResult<(i32, String, Vec<WatchProvider>)>> =
+            stream::iter(uncached_provider_requests)
+                .map(|(tmdb_id, country_code)| async move {
+                    let (providers, _link) =
+                        tmdb.get_watch_providers(tmdb_id, &country_code).await?;
+                    Ok((tmdb_id, country_code, providers))
+                })
+                .buffer_unordered(max_concurrent.max(1))
+                .collect()
+                .await;
+
+        for item in items {
+            match item {
+                Ok((tmdb_id, country_code, providers)) => {
+                    debug!(
+                        tmdb_id = tmdb_id,
+                        country = %country_code,
+                        provider_count = providers.len(),
+                        "caching provider data"
+                    );
+                    cache.put_providers(tmdb_id, &country_code, &providers).await?;
+                    new_providers.insert((tmdb_id, country_code), providers);
+                },
+                Err(err) => warn!(error = %err, "failed to fetch watch providers"),
+            }
+        }
+
+        debug!(new_providers_cached = new_providers.len(), "new providers cached");
+    }
+
+    for result in &mut results {
+        let key = (result.tmdb_id, country.to_string());
+        if let Some(providers) = cached_providers.get(&key) {
+            result.streaming_providers = providers.clone();
+        } else if let Some(providers) = new_providers.get(&key) {
+            result.streaming_providers = providers.clone();
+        }
     }
 
     debug!(result_count = results.len(), "completed processing");
@@ -284,6 +349,23 @@ fn build_release_requests(
         }
     }
     requests
+}
+
+fn build_provider_requests(
+    films: &[FilmWithReleases],
+    country: &str,
+    today: &jiff::civil::Date,
+) -> Vec<(i32, String)> {
+    films
+        .iter()
+        .filter(|f| needs_provider_lookup(f, today))
+        .map(|f| (f.tmdb_id, country.to_string()))
+        .collect()
+}
+
+fn needs_provider_lookup(film: &FilmWithReleases, today: &jiff::civil::Date) -> bool {
+    let has_future_streaming = film.streaming.iter().any(|r| r.date > *today);
+    !has_future_streaming
 }
 
 fn get_releases_with_fallback_bulk(

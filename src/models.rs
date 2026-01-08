@@ -44,6 +44,41 @@ pub enum ReleaseCategory {
     NoReleases,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub enum ProviderType {
+    Stream,
+    Rent,
+    Buy,
+}
+
+impl ProviderType {
+    pub fn as_code(self) -> i32 {
+        match self {
+            ProviderType::Stream => 1,
+            ProviderType::Rent => 2,
+            ProviderType::Buy => 3,
+        }
+    }
+
+    pub fn from_code(code: i32) -> Option<Self> {
+        match code {
+            1 => Some(ProviderType::Stream),
+            2 => Some(ProviderType::Rent),
+            3 => Some(ProviderType::Buy),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct WatchProvider {
+    pub provider_id: i32,
+    pub provider_name: String,
+    pub logo_path: String,
+    pub link: Option<String>,
+    pub provider_type: ProviderType,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct FilmWithReleases {
     pub title: String,
@@ -54,6 +89,7 @@ pub struct FilmWithReleases {
     pub theatrical: Vec<ReleaseDate>,
     pub streaming: Vec<ReleaseDate>,
     pub category: ReleaseCategory,
+    pub streaming_providers: Vec<WatchProvider>,
 }
 
 #[derive(Debug, Deserialize)]

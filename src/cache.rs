@@ -4,9 +4,11 @@ use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set, Tr
 use tracing::debug;
 
 use crate::{
-    entities::{film_cache, release_cache, release_cache_meta},
+    entities::{
+        film_cache, provider_cache, provider_cache_meta, release_cache, release_cache_meta,
+    },
     error::AppResult,
-    models::{ReleaseDate, ReleaseType},
+    models::{ProviderType, ReleaseDate, ReleaseType, WatchProvider},
 };
 
 #[derive(Clone, Debug)]
@@ -23,14 +25,21 @@ pub struct CacheManager {
     db: DatabaseConnection,
     film_ttl_seconds: i64,
     release_ttl_seconds: i64,
+    provider_ttl_seconds: i64,
 }
 
 impl CacheManager {
-    pub fn new(db: DatabaseConnection, film_ttl_days: i64, release_ttl_hours: i64) -> Self {
+    pub fn new(
+        db: DatabaseConnection,
+        film_ttl_days: i64,
+        release_ttl_hours: i64,
+        provider_ttl_days: i64,
+    ) -> Self {
         Self {
             db,
             film_ttl_seconds: film_ttl_days * 86_400,
             release_ttl_seconds: release_ttl_hours * 3_600,
+            provider_ttl_seconds: provider_ttl_days * 86_400,
         }
     }
 
@@ -309,14 +318,144 @@ impl CacheManager {
     }
 
     pub async fn clear_mock_release_dates(&self) -> AppResult<()> {
-        // Delete release dates that contain "Mock" in the note field
         release_cache::Entity::delete_many()
             .filter(release_cache::Column::Note.contains("Mock"))
             .exec(&self.db)
             .await?;
 
-        // Also clean up orphaned meta records
-        // This is a simple cleanup - in production you might want more sophisticated logic
+        Ok(())
+    }
+
+    pub async fn get_providers(
+        &self,
+        requests: &[(i32, String)],
+    ) -> AppResult<HashMap<(i32, String), Vec<WatchProvider>>> {
+        if requests.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let request_set: HashSet<(i32, String)> = requests.iter().cloned().collect();
+        let tmdb_ids: Vec<i32> = requests.iter().map(|(id, _)| *id).collect();
+
+        debug!(
+            request_count = requests.len(),
+            tmdb_id_count = tmdb_ids.len(),
+            "provider cache lookup: starting"
+        );
+
+        let metas = provider_cache_meta::Entity::find()
+            .filter(provider_cache_meta::Column::TmdbId.is_in(tmdb_ids.clone()))
+            .all(&self.db)
+            .await?;
+
+        debug!(meta_count = metas.len(), "provider cache lookup: found meta entries");
+
+        let fresh_requests: Vec<(i32, String)> = metas
+            .into_iter()
+            .filter(|meta| {
+                let is_fresh = self.is_provider_fresh(meta.cached_at);
+                let in_request = request_set.contains(&(meta.tmdb_id, meta.country.clone()));
+                is_fresh && in_request
+            })
+            .map(|meta| (meta.tmdb_id, meta.country))
+            .collect();
+
+        debug!(fresh_count = fresh_requests.len(), "provider cache lookup: fresh requests");
+
+        if fresh_requests.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let fresh_tmdb_ids: Vec<i32> = fresh_requests.iter().map(|(id, _)| *id).collect();
+        let fresh_set: HashSet<(i32, String)> = fresh_requests.iter().cloned().collect();
+
+        let rows = provider_cache::Entity::find()
+            .filter(provider_cache::Column::TmdbId.is_in(fresh_tmdb_ids))
+            .all(&self.db)
+            .await?;
+
+        let mut grouped: HashMap<(i32, String), Vec<_>> = HashMap::new();
+        for row in rows {
+            let key = (row.tmdb_id, row.country.clone());
+            if fresh_set.contains(&key) {
+                grouped.entry(key).or_default().push(row);
+            }
+        }
+
+        let mut result = HashMap::new();
+
+        for key in fresh_requests {
+            let rows = grouped.remove(&key).unwrap_or_default();
+            let providers: Vec<WatchProvider> = rows
+                .into_iter()
+                .filter_map(|row| {
+                    Some(WatchProvider {
+                        provider_id: row.provider_id,
+                        provider_name: row.provider_name,
+                        logo_path: row.logo_path,
+                        link: row.link,
+                        provider_type: ProviderType::from_code(row.provider_type)?,
+                    })
+                })
+                .collect();
+            result.insert(key, providers);
+        }
+
+        Ok(result)
+    }
+
+    pub async fn put_providers(
+        &self,
+        tmdb_id: i32,
+        country: &str,
+        providers: &[WatchProvider],
+    ) -> AppResult<()> {
+        let now = now_sec();
+
+        let txn = self.db.begin().await?;
+
+        provider_cache::Entity::delete_many()
+            .filter(provider_cache::Column::TmdbId.eq(tmdb_id))
+            .filter(provider_cache::Column::Country.eq(country))
+            .exec(&txn)
+            .await?;
+
+        for provider in providers {
+            let model = provider_cache::ActiveModel {
+                id: Default::default(),
+                tmdb_id: Set(tmdb_id),
+                country: Set(country.to_string()),
+                provider_id: Set(provider.provider_id),
+                provider_name: Set(provider.provider_name.clone()),
+                logo_path: Set(provider.logo_path.clone()),
+                link: Set(provider.link.clone()),
+                provider_type: Set(provider.provider_type.as_code()),
+                cached_at: Set(now),
+            };
+            provider_cache::Entity::insert(model).exec(&txn).await?;
+        }
+
+        let meta = provider_cache_meta::ActiveModel {
+            id: Default::default(),
+            tmdb_id: Set(tmdb_id),
+            country: Set(country.to_string()),
+            cached_at: Set(now),
+        };
+
+        provider_cache_meta::Entity::insert(meta)
+            .on_conflict(
+                sea_orm::sea_query::OnConflict::columns([
+                    provider_cache_meta::Column::TmdbId,
+                    provider_cache_meta::Column::Country,
+                ])
+                .update_columns([provider_cache_meta::Column::CachedAt])
+                .to_owned(),
+            )
+            .exec(&txn)
+            .await?;
+
+        txn.commit().await?;
+
         Ok(())
     }
 
@@ -326,6 +465,10 @@ impl CacheManager {
 
     fn is_release_fresh(&self, cached_at: i64) -> bool {
         now_sec().saturating_sub(cached_at) <= self.release_ttl_seconds
+    }
+
+    fn is_provider_fresh(&self, cached_at: i64) -> bool {
+        now_sec().saturating_sub(cached_at) <= self.provider_ttl_seconds
     }
 }
 

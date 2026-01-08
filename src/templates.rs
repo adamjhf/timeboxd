@@ -2,7 +2,9 @@ use hypertext::{Raw, maud, prelude::*};
 
 use crate::{
     countries::{COUNTRIES, get_country_name},
-    models::{FilmWithReleases, ReleaseCategory, ReleaseDate, ReleaseType},
+    models::{
+        FilmWithReleases, ProviderType, ReleaseCategory, ReleaseDate, ReleaseType, WatchProvider,
+    },
 };
 
 const TAILWIND_CDN: &str = "https://cdn.tailwindcss.com";
@@ -347,6 +349,89 @@ fn film_card(film: &FilmWithReleases) -> impl Renderable + '_ {
                     (release_list("Theatrical", &film.theatrical, ReleaseType::Theatrical))
                     (release_list("Streaming", &film.streaming, ReleaseType::Digital))
                 }
+
+                @if !film.streaming_providers.is_empty() {
+                    (provider_list(&film.streaming_providers))
+                }
+            }
+        }
+    }
+}
+
+fn provider_list(providers: &[WatchProvider]) -> impl Renderable + '_ {
+    let stream_providers: Vec<_> =
+        providers.iter().filter(|p| p.provider_type == ProviderType::Stream).collect();
+    let rent_providers: Vec<_> =
+        providers.iter().filter(|p| p.provider_type == ProviderType::Rent).collect();
+    let buy_providers: Vec<_> =
+        providers.iter().filter(|p| p.provider_type == ProviderType::Buy).collect();
+
+    maud! {
+        div class="mt-3 border-t border-slate-700 pt-3" {
+            h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2" { "Available now" }
+            div class="space-y-2" {
+                @if !stream_providers.is_empty() {
+                    div class="flex items-center gap-2" {
+                        span class="text-xs text-slate-500 w-12" { "Stream" }
+                        div class="flex flex-wrap gap-1.5" {
+                            @for provider in &stream_providers {
+                                (provider_icon(provider))
+                            }
+                        }
+                    }
+                }
+                @if !rent_providers.is_empty() {
+                    div class="flex items-center gap-2" {
+                        span class="text-xs text-slate-500 w-12" { "Rent" }
+                        div class="flex flex-wrap gap-1.5" {
+                            @for provider in &rent_providers {
+                                (provider_icon(provider))
+                            }
+                        }
+                    }
+                }
+                @if !buy_providers.is_empty() {
+                    div class="flex items-center gap-2" {
+                        span class="text-xs text-slate-500 w-12" { "Buy" }
+                        div class="flex flex-wrap gap-1.5" {
+                            @for provider in &buy_providers {
+                                (provider_icon(provider))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn provider_icon(provider: &WatchProvider) -> impl Renderable + '_ {
+    maud! {
+        @if let Some(link) = &provider.link {
+            a
+                href=(link)
+                target="_blank"
+                rel="noopener noreferrer"
+                title=(provider.provider_name)
+                class="block"
+            {
+                img
+                    class="w-7 h-7 rounded"
+                    src=(format!("https://image.tmdb.org/t/p/w92{}", provider.logo_path))
+                    alt=(provider.provider_name)
+                    loading="lazy"
+                    width="28"
+                    height="28";
+            }
+        } @else {
+            span title=(provider.provider_name) class="block" {
+                img
+                    class="w-7 h-7 rounded"
+                    src=(format!("https://image.tmdb.org/t/p/w92{}", provider.logo_path))
+                    alt=(provider.provider_name)
+                    loading="lazy"
+                    width="28"
+                    height="28";
             }
         }
     }
