@@ -1,0 +1,29 @@
+name: Deploy to NixOS
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy to Master
+
+    env:
+      SSH_KEY: ${{ secrets.SSH_KEY }}
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -v -m 700 $HOME/.ssh
+          ssh-keyscan -H $SSH_HOST > $HOME/.ssh/known_hosts
+          echo "${SSH_KEY}" > $HOME/.ssh/id_rsa
+          chmod 400 $HOME/.ssh/id_rsa
+
+      - name: Update nix container
+        run: |
+          ssh -o ServerAliveInterval=60 "${SSH_USER}@${SSH_HOST}" "nix run --refresh -L 'git+ssh://git@github.com/adamjhf/timeboxd?ref=${{ github.ref }}#container' -- create --start"
