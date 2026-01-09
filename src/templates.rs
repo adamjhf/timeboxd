@@ -15,7 +15,7 @@ pub fn index_page(saved_username: Option<&str>, saved_country: Option<&str>) -> 
     let country_name = saved_country.map(get_country_name);
 
     page(
-        "Timeboxd",
+        "Timeboxd - upcoming film releases from your Letterboxd watchlist",
         maud! {
             div class="min-h-screen bg-slate-900" {
                 div class="max-w-2xl mx-auto px-6 py-12" {
@@ -82,7 +82,7 @@ pub fn processing_page(username: &str, country: &str) -> String {
     );
 
     page(
-        "Processing",
+        &format!("Upcoming film releases for {username} - Timeboxd"),
         maud! {
             div class="min-h-screen bg-slate-900 flex items-center justify-center" {
                 div id="content" class="max-w-xl w-full px-6" {
@@ -99,11 +99,12 @@ pub fn processing_page(username: &str, country: &str) -> String {
                     .then(response => response.text())
                     .then(html => {{
                         document.getElementById('content').innerHTML = html;
+                        document.title = 'Upcoming film releases for {} - Timeboxd';
                     }})
                     .catch(error => {{
                         document.getElementById('content').innerHTML = '<div class=\"bg-slate-800 shadow-xl rounded-lg p-8 border border-slate-700\"><h1 class=\"text-2xl font-bold text-slate-100\">Error</h1><p class=\"mt-4 text-slate-400\">' + error.message + '</p></div>';
                     }});
-            ", url))) }
+            ", url, username))) }
         },
     )
 }
