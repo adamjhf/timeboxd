@@ -18,9 +18,9 @@ pub fn index_page(saved_username: Option<&str>, saved_country: Option<&str>) -> 
         "Timeboxd - upcoming film releases from your Letterboxd watchlist",
         maud! {
             div class="min-h-screen bg-slate-900" {
-                div class="max-w-2xl mx-auto px-6 py-12" {
-                    div class="bg-slate-800 shadow-xl rounded-lg p-8 border border-slate-700" {
-                        h1 class="text-3xl font-bold text-slate-100" { "Timeboxd" }
+                div class="max-w-2xl mx-auto px-4 py-12 sm:px-6" {
+                    div class="bg-slate-800 shadow-xl rounded-lg p-6 sm:p-8 border border-slate-700" {
+                        h1 class="text-2xl sm:text-3xl font-bold text-slate-100" { "Timeboxd" }
                         p class="mt-2 text-slate-400" { "Upcoming film release dates for your Letterboxd watchlist." }
 
                         form class="mt-8 space-y-6" method="get" action="/release-dates" {
@@ -178,11 +178,11 @@ pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases
     sort_by_year(&mut no_releases);
 
     content_div(maud! {
-        div class="max-w-4xl mx-auto px-4 py-4" {
+        div class="max-w-4xl mx-auto px-3 py-4 sm:px-6" {
              div class="flex items-start justify-between gap-4" {
-                 div {
-                     h1 class="text-2xl font-bold text-slate-100" { "Timeboxd" }
-                     p class="mt-1 text-sm text-slate-400" { "Local release dates for your Letterboxd watchlist" }
+                 div class="flex-1 min-w-0" {
+                     h1 class="text-xl sm:text-2xl font-bold text-slate-100" { "Timeboxd" }
+                     p class="mt-1 text-sm text-slate-400 whitespace-nowrap" { "Local release dates for your Letterboxd watchlist" }
                      p class="mt-1 text-sm text-slate-400" {
                          a class="text-orange-500 hover:text-orange-400" href=(letterboxd_user_url) target="_blank" rel="noopener noreferrer" {
                              "@" (username)
@@ -190,8 +190,8 @@ pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases
                          " · " (country_name)
                      }
                  }
-                a class="text-sm text-orange-500 hover:text-orange-400" href="/" { "New query" }
-            }
+                 a class="mt-2 text-sm text-orange-500 hover:text-orange-400 flex-shrink-0" href="/" { "New query" }
+              }
 
             @if films.is_empty() {
                 div class="mt-4 bg-slate-800 shadow-xl rounded-lg p-4 border border-slate-700" {
@@ -256,8 +256,8 @@ pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases
 
 pub fn error_fragment(message: String) -> String {
     content_div(maud! {
-        div class="max-w-2xl mx-auto px-6 py-12" {
-            div class="bg-slate-800 shadow-xl rounded-lg p-8 border border-slate-700" {
+        div class="max-w-2xl mx-auto px-3 py-12 sm:px-6" {
+            div class="bg-slate-800 shadow-xl rounded-lg p-6 sm:p-8 border border-slate-700" {
                 h1 class="text-2xl font-bold text-slate-100" { "Error" }
                 p class="mt-4 text-slate-400" { (message) }
                 a class="mt-6 inline-block text-orange-500 hover:text-orange-400" href="/" { "Back" }
@@ -312,13 +312,13 @@ fn film_card(film: &FilmWithReleases) -> impl Renderable + '_ {
         div class="bg-slate-800 shadow-xl rounded p-3 flex gap-3 border border-slate-700" {
             @if let Some(poster_path) = &film.poster_path {
                 a
-                    class="block flex-shrink-0 w-20"
+                    class="block flex-shrink-0 w-16 sm:w-20"
                     href=(letterboxd_url.clone())
                     target="_blank"
                     rel="noopener noreferrer"
                 {
                     img
-                        class="w-20 h-30 object-cover rounded"
+                        class="w-16 h-24 sm:w-20 sm:h-30 object-cover rounded"
                         src=(format!("https://image.tmdb.org/t/p/w200{}", poster_path))
                         alt=(format!("{} poster", film.title))
                         loading="lazy"
@@ -326,14 +326,14 @@ fn film_card(film: &FilmWithReleases) -> impl Renderable + '_ {
                         height="120";
                 }
             } @else {
-                div class="flex-shrink-0 w-20 h-30 bg-slate-700 rounded flex items-center justify-center border border-slate-600" {
+                div class="flex-shrink-0 w-16 h-24 sm:w-20 sm:h-30 bg-slate-700 rounded flex items-center justify-center border border-slate-600" {
                     span class="text-xs text-slate-500" { "No poster" }
                 }
             }
             div class="flex-1 min-w-0" {
                 div class="flex items-start justify-between gap-2" {
                     div class="flex-1 min-w-0" {
-                        h2 class="text-lg font-semibold" {
+                        h2 class="text-base sm:text-lg font-semibold" {
                             a class="text-slate-100 hover:text-orange-500" href=(letterboxd_url) target="_blank" rel="noopener noreferrer" {
                                 (film.title)
                                 @if let Some(year) = film.year {
@@ -349,7 +349,7 @@ fn film_card(film: &FilmWithReleases) -> impl Renderable + '_ {
                     }
                 }
 
-                div class="mt-2 grid grid-cols-2 gap-3" {
+                div class="mt-2 grid grid-cols-2 sm:grid-cols-2 gap-3" {
                     (release_list("Theatrical", &film.theatrical, ReleaseType::Theatrical))
                     (release_list("Streaming", &film.streaming, ReleaseType::Digital))
                 }
