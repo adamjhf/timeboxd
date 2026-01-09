@@ -31,7 +31,8 @@ pub fn index_page(saved_username: Option<&str>, saved_country: Option<&str>) -> 
                                     name="username"
                                     id="username"
                                     value=[saved_username]
-                                    required;
+                                    oninput="validateForm()"
+                                    onkeydown="handleUsernameKeydown(event)";
                             }
 
                             div {
@@ -44,9 +45,11 @@ pub fn index_page(saved_username: Option<&str>, saved_country: Option<&str>) -> 
                                         class="w-full rounded-md border border-slate-600 bg-slate-700 text-slate-100 px-3 py-2 placeholder-slate-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
                                         value=[country_name]
                                         onkeyup="filterCountries()"
+                                        oninput="validateForm()"
+                                        onkeydown="handleCountryKeydown(event)"
                                         onfocus="document.getElementById('country-dropdown').classList.remove('hidden')"
                                         ;
-                                    input type="hidden" name="country" id="country" value=[saved_country] required;
+                                    input type="hidden" name="country" id="country" value=[saved_country];
                                     div id="country-dropdown" class="hidden absolute z-10 mt-1 w-full bg-slate-700 border border-slate-600 rounded-md shadow-lg max-h-60 overflow-y-auto" {
                                         @for country in COUNTRIES {
                                             div
@@ -64,7 +67,7 @@ pub fn index_page(saved_username: Option<&str>, saved_country: Option<&str>) -> 
                                 p class="mt-2 text-xs text-slate-500" { "Select a country to see release dates for that region." }
                             }
 
-                             button id="submit-button" class="w-full rounded-md bg-orange-600 px-4 py-2 font-semibold text-white hover:bg-orange-700 focus:outline-none focus:ring-1 focus:ring-orange-500" type="submit" { "Find release dates" }
+                             button id="submit-button" class="w-full rounded-md bg-orange-600 px-4 py-2 font-semibold text-white hover:bg-orange-700 focus:outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50 disabled:cursor-not-allowed" type="submit" disabled { "Find release dates" }
                         }
                         (country_selector_script())
                     }
@@ -484,7 +487,42 @@ fn country_selector_script() -> impl Renderable {
                     document.getElementById('country-search').value = name;
                     document.getElementById('country-dropdown').classList.add('hidden');
                     selectedIndex = -1;
+                    validateForm();
                     document.getElementById('submit-button').focus();
+                }
+
+                function validateForm() {
+                    const username = document.getElementById('username').value.trim();
+                    const country = document.getElementById('country').value.trim();
+                    const submitButton = document.getElementById('submit-button');
+                    submitButton.disabled = !username || !country;
+                }
+
+                function handleUsernameKeydown(event) {
+                    if (event.key === 'Enter') {
+                        const username = document.getElementById('username').value.trim();
+                        const country = document.getElementById('country').value.trim();
+                        if (username && country) {
+                            event.target.form.submit();
+                        } else {
+                            event.preventDefault();
+                        }
+                    }
+                }
+
+                function handleCountryKeydown(event) {
+                    const dropdown = document.getElementById('country-dropdown');
+                    const isOpen = !dropdown.classList.contains('hidden');
+
+                    if (event.key === 'Enter' && !isOpen) {
+                        const username = document.getElementById('username').value.trim();
+                        const country = document.getElementById('country').value.trim();
+                        if (username && country) {
+                            event.target.form.submit();
+                        } else {
+                            event.preventDefault();
+                        }
+                    }
                 }
 
                 function getVisibleOptions() {
@@ -623,7 +661,7 @@ fn country_selector_script() -> impl Renderable {
                         case 'ArrowUp':
                             e.preventDefault();
                             if (visible.length > 0) {
-                                selectedIndex = currentIndex <= 0 ? visible.length - 1 : currentIndex - 1;
+                                selectedIndex = currentIndex <= 0 ? visible.length - 1 : selectedIndex - 1;
                                 highlightOption(selectedIndex);
                                 focusOption(selectedIndex);
                             }
@@ -651,6 +689,11 @@ fn country_selector_script() -> impl Renderable {
                         dropdown.classList.add('hidden');
                         selectedIndex = -1;
                     }
+                });
+
+                // Initialize form validation on page load
+                document.addEventListener('DOMContentLoaded', function() {
+                    validateForm();
                 });
             "#))
         }
