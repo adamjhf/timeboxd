@@ -410,15 +410,12 @@ impl CacheManager {
         country: &str,
         providers: &[WatchProvider],
     ) -> AppResult<()> {
+        if providers.is_empty() {
+            return Ok(());
+        }
+
         let now = now_sec();
-
         let txn = self.db.begin().await?;
-
-        provider_cache::Entity::delete_many()
-            .filter(provider_cache::Column::TmdbId.eq(tmdb_id))
-            .filter(provider_cache::Column::Country.eq(country))
-            .exec(&txn)
-            .await?;
 
         for provider in providers {
             let model = provider_cache::ActiveModel {
@@ -432,7 +429,24 @@ impl CacheManager {
                 provider_type: Set(provider.provider_type.as_code()),
                 cached_at: Set(now),
             };
-            provider_cache::Entity::insert(model).exec(&txn).await?;
+            provider_cache::Entity::insert(model)
+                .on_conflict(
+                    sea_orm::sea_query::OnConflict::columns([
+                        provider_cache::Column::TmdbId,
+                        provider_cache::Column::Country,
+                        provider_cache::Column::ProviderId,
+                        provider_cache::Column::ProviderType,
+                    ])
+                    .update_columns([
+                        provider_cache::Column::ProviderName,
+                        provider_cache::Column::LogoPath,
+                        provider_cache::Column::Link,
+                        provider_cache::Column::CachedAt,
+                    ])
+                    .to_owned(),
+                )
+                .exec(&txn)
+                .await?;
         }
 
         let meta = provider_cache_meta::ActiveModel {
