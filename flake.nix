@@ -68,6 +68,8 @@
             if !pkgs.stdenv.isDarwin then "${pkgs.clang}/bin/clang" else null;
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS =
             if !pkgs.stdenv.isDarwin then "-C link-arg=-fuse-ld=${pkgs.mold}/bin/mold" else null;
+          LIBCLANG_PATH =
+            if !pkgs.stdenv.isDarwin then "${pkgs.llvmPackages.libclang.lib}/lib" else null;
         };
 
         timeboxd = craneLib.buildPackage (
