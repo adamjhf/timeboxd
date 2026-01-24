@@ -54,7 +54,11 @@
 
           nativeBuildInputs =
             with pkgs;
-            lib.optionals stdenv.isLinux [
+            [
+              cmake
+              git
+            ]
+            ++ lib.optionals stdenv.isLinux [
               clang
               mold
             ];

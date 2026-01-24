@@ -23,8 +23,8 @@ impl From<sea_orm::DbErr> for AppError {
     }
 }
 
-impl From<reqwest::Error> for AppError {
-    fn from(err: reqwest::Error) -> Self {
+impl From<wreq::Error> for AppError {
+    fn from(err: wreq::Error) -> Self {
         Self(anyhow::Error::new(err))
     }
 }

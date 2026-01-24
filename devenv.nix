@@ -6,6 +6,7 @@
 {
   packages = [
     pkgs.git
+    pkgs.cmake
     pkgs.sqlite
     pkgs.sea-orm-cli
     pkgs.secretspec

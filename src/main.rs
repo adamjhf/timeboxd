@@ -19,13 +19,14 @@ use tower_http::{
     trace::TraceLayer,
 };
 use tracing::info;
+use wreq_util::Emulation;
 
 use crate::{cache::CacheManager, config::Config, tmdb::TmdbClient};
 
 #[derive(Clone)]
 pub struct AppState {
     pub config: Arc<Config>,
-    pub http: reqwest::Client,
+    pub http: wreq::Client,
     pub cache: CacheManager,
     pub tmdb: Arc<TmdbClient>,
 }
@@ -41,11 +42,8 @@ async fn main() -> anyhow::Result<()> {
 
     let config = Arc::new(Config::from_env()?);
 
-    let http = reqwest::Client::builder()
-        .user_agent(
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like \
-             Gecko) Chrome/131.0.0.0 Safari/537.36",
-        )
+    let http = wreq::Client::builder()
+        .emulation(Emulation::Chrome131)
         .timeout(Duration::from_secs(10))
         .build()?;
 

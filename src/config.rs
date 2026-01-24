@@ -48,7 +48,7 @@ impl Config {
             std::env::var("MAX_CONCURRENT_REQUESTS").ok().and_then(|s| s.parse().ok()).unwrap_or(5);
 
         let letterboxd_delay_ms: u64 =
-            std::env::var("LETTERBOXD_DELAY_MS").ok().and_then(|s| s.parse().ok()).unwrap_or(250);
+            std::env::var("LETTERBOXD_DELAY_MS").ok().and_then(|s| s.parse().ok()).unwrap_or(100);
 
         Ok(Self {
             addr: format!("{host}:{port}").parse().context("HOST/PORT")?,

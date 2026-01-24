@@ -15,7 +15,7 @@ use crate::{
 };
 
 pub async fn process(
-    http: &reqwest::Client,
+    http: &wreq::Client,
     cache: &CacheManager,
     tmdb: &TmdbClient,
     films: Vec<WishlistFilm>,
@@ -262,7 +262,7 @@ pub async fn process(
 }
 
 async fn resolve_uncached_films(
-    http: &reqwest::Client,
+    http: &wreq::Client,
     tmdb: &TmdbClient,
     films: Vec<WishlistFilm>,
     max_concurrent: usize,

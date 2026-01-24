@@ -1,12 +1,16 @@
-use std::{collections::HashSet, time::Duration};
+use std::{
+    collections::HashSet,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use scraper::{Html, Selector};
 use tracing::debug;
+use wreq::header::REFERER;
 
 use crate::{error::AppResult, models::WishlistFilm};
 
 pub async fn fetch_watchlist(
-    client: &reqwest::Client,
+    client: &wreq::Client,
     username: &str,
     delay_ms: u64,
     cutoff_year: i16,
@@ -26,7 +30,14 @@ pub async fn fetch_watchlist(
         };
 
         debug!(page = page, "fetching watchlist page");
-        let html = client.get(&url).send().await?.error_for_status()?.text().await?;
+        let html = client
+            .get(&url)
+            .header(REFERER, "https://letterboxd.com/")
+            .send()
+            .await?
+            .error_for_status()?
+            .text()
+            .await?;
 
         let films = parse_watchlist_page(&html)?;
         debug!(page = page, films_found = films.len(), "parsed watchlist page");
@@ -48,7 +59,8 @@ pub async fn fetch_watchlist(
         }
 
         page += 1;
-        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+        let delay = delay_ms + jitter_ms(150);
+        tokio::time::sleep(Duration::from_millis(delay)).await;
     }
 
     debug!(username = %username, total_films = out.len(), "completed watchlist fetch");
@@ -73,6 +85,15 @@ fn parse_watchlist_page(html: &str) -> AppResult<Vec<WishlistFilm>> {
     }
 
     Ok(out)
+}
+
+fn jitter_ms(max: u64) -> u64 {
+    if max == 0 {
+        return 0;
+    }
+    let nanos =
+        SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.subsec_nanos() as u64).unwrap_or(0);
+    nanos % (max + 1)
 }
 
 fn parse_year_from_title(title: &str) -> Option<i16> {
@@ -100,7 +121,7 @@ pub struct LetterboxdFilmData {
 }
 
 pub async fn fetch_letterboxd_film_data(
-    client: &reqwest::Client,
+    client: &wreq::Client,
     slug: &str,
 ) -> AppResult<LetterboxdFilmData> {
     let url = format!("https://letterboxd.com/film/{}/", slug);

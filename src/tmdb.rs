@@ -17,14 +17,14 @@ use crate::{
 };
 
 pub struct TmdbClient {
-    client: reqwest::Client,
+    client: wreq::Client,
     access_token: String,
     base_url: String,
     limiter: Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>,
 }
 
 impl TmdbClient {
-    pub fn new(client: reqwest::Client, access_token: String, base_url: String, rps: u32) -> Self {
+    pub fn new(client: wreq::Client, access_token: String, base_url: String, rps: u32) -> Self {
         if access_token.trim().is_empty() {
             warn!("TMDB_ACCESS_TOKEN not provided, using mock data");
         }

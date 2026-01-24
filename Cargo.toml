@@ -17,7 +17,8 @@ futures = "0.3"
 governor = "0.8"
 hypertext = { version = "0.12", features = ["axum"] }
 jiff = { version = "0.2", features = ["serde"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip", "brotli", "deflate"] }
+wreq = { version = "6.0.0-rc.27", features = ["cookies", "gzip", "brotli", "deflate", "json", "query", "tracing"] }
+wreq-util = "3.0.0-rc.9"
 scraper = "0.22"
 migration = { path = "migration" }
 sea-orm = { version = "1", features = ["runtime-tokio-rustls", "sqlx-sqlite", "macros"] }
