@@ -9,7 +9,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    name: Deploy to Master
+    name: Deploy
 
     env:
       SSH_KEY: ${{ secrets.SSH_KEY }}
