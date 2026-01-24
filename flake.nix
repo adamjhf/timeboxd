@@ -60,6 +60,7 @@
             ]
             ++ lib.optionals stdenv.isLinux [
               clang
+              llvmPackages.libclang
               mold
             ];
 
