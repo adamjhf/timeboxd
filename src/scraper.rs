@@ -126,7 +126,14 @@ pub async fn fetch_letterboxd_film_data(
 ) -> AppResult<LetterboxdFilmData> {
     let url = format!("https://letterboxd.com/film/{}/", slug);
     debug!(slug = %slug, "fetching Letterboxd film page");
-    let html = client.get(&url).send().await?.error_for_status()?.text().await?;
+    let html = client
+        .get(&url)
+        .header(REFERER, "https://letterboxd.com/")
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
 
     let doc = Html::parse_document(&html);
 
