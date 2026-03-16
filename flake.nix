@@ -116,7 +116,7 @@
         }
         // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
           container = extra-container.lib.buildContainers {
-            inherit system nixpkgs;
+            inherit system;
 
             config.containers.timeboxd = {
               privateNetwork = false;
