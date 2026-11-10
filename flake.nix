@@ -5,7 +5,7 @@
     fenix.url = "github:nix-community/fenix";
     fenix.inputs.nixpkgs.follows = "nixpkgs";
     flake-utils.url = "github:numtide/flake-utils";
-    extra-container.url = "github:erikarvstedt/extra-container";
+    extra-container.url = "github:extra-container/extra-container";
     # extra-container.inputs.nixpkgs.follows = "nixpkgs";
     extra-container.inputs.flake-utils.follows = "flake-utils";
   };
