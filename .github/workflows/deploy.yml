@@ -6,24 +6,38 @@ on:
       - master
   workflow_dispatch:
 
+permissions:
+  contents: read
+  id-token: write # lets the Tailscale action authenticate with GitHub's OIDC token
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     name: Deploy
 
     env:
-      SSH_KEY: ${{ secrets.SSH_KEY }}
-      SSH_HOST: ${{ secrets.SSH_HOST }}
-      SSH_USER: ${{ secrets.SSH_USER }}
+      # Tailscale MagicDNS name; the servers' SSH port is only reachable over Tailscale.
+      SSH_HOST: syd1
 
     steps:
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ secrets.TS_AUDIENCE }}
+          tags: tag:ci
+          ping: ${{ env.SSH_HOST }}
+
       - name: Set up SSH
         run: |
+          # Port 22 on the tailnet is Tailscale SSH, which authorizes tag:ci by tailnet policy, so no
+          # client key is needed. Trust the host keys the server advertises to the tailnet.
           mkdir -v -m 700 $HOME/.ssh
-          ssh-keyscan -H $SSH_HOST > $HOME/.ssh/known_hosts
-          echo "${SSH_KEY}" > $HOME/.ssh/id_rsa
-          chmod 400 $HOME/.ssh/id_rsa
+          tailscale status --json | jq -r --arg host "$SSH_HOST" \
+            '.Peer[] | select(.DNSName | startswith($host + ".")) | .sshHostKeys[]? | "\($host) \(.)"' \
+            > $HOME/.ssh/known_hosts
+          [ -s $HOME/.ssh/known_hosts ] || { echo "$SSH_HOST advertises no Tailscale SSH host keys" >&2; exit 1; }
 
       - name: Update nix container
         run: |
-          ssh -o ServerAliveInterval=60 "${SSH_USER}@${SSH_HOST}" "nix run --refresh -L 'git+ssh://git@github.com/adamjhf/timeboxd?ref=${{ github.ref }}#container' -- create --start"
+          ssh -o ServerAliveInterval=60 "${{ secrets.SSH_USER }}@${SSH_HOST}" "nix run --refresh -L 'git+ssh://git@github.com/adamjhf/timeboxd?ref=${{ github.ref }}#container' -- create --start"
