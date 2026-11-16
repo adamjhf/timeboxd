@@ -9,23 +9,23 @@ members = [".", "migration"]
 [dependencies]
 anyhow = "1"
 axum = { version = "0.8", features = ["macros", "form", "multipart"] }
-axum-extra = { version = "0.10", features = ["cookie"] }
+axum-extra = { version = "0.12", features = ["cookie"] }
 cookie = "0.18"
 time = "0.3"
 dotenvy = "0.15"
 futures = "0.3"
-governor = "0.8"
+governor = "0.10"
 hypertext = { version = "0.12", features = ["axum"] }
-jiff = { version = "0.2", features = ["serde"] }
+jiff = { version = "1", features = ["serde"] }
 migration = { path = "migration" }
-sea-orm = { version = "1", features = ["runtime-tokio-rustls", "sqlx-sqlite", "macros"] }
-sea-orm-migration = { version = "1", features = ["runtime-tokio-rustls", "sqlx-sqlite"] }
+sea-orm = { version = "2", features = ["runtime-tokio-rustls", "sqlx-sqlite", "macros"] }
+sea-orm-migration = { version = "2", features = ["runtime-tokio-rustls", "sqlx-sqlite"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["trace", "cors"] }
+tower-http = { version = "0.7", features = ["trace", "cors"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 urlencoding = "2"

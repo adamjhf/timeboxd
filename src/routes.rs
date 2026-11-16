@@ -121,7 +121,7 @@ pub async fn process(
             .await?
             .ok_or_else(|| anyhow::anyhow!("saved watchlist not found"))?;
 
-        let today: jiff::civil::Date = jiff::Zoned::now().into();
+        let today: jiff::civil::Date = jiff::ZonedDateTime::now().into();
         let (films, unmatched) = crate::processor::process(
             &state.cache,
             &state.tmdb,

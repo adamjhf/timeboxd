@@ -20,6 +20,9 @@ pub struct FilmCacheData {
     pub poster_path: Option<String>,
 }
 
+/// Cached theatrical and streaming releases keyed by TMDB ID and country code.
+pub type CachedReleases = HashMap<(i32, String), (Vec<ReleaseDate>, Vec<ReleaseDate>)>;
+
 #[derive(Clone)]
 pub struct CacheManager {
     db: DatabaseConnection,
@@ -109,10 +112,7 @@ impl CacheManager {
         Ok(())
     }
 
-    pub async fn get_releases(
-        &self,
-        requests: &[(i32, String)],
-    ) -> AppResult<HashMap<(i32, String), (Vec<ReleaseDate>, Vec<ReleaseDate>)>> {
+    pub async fn get_releases(&self, requests: &[(i32, String)]) -> AppResult<CachedReleases> {
         if requests.is_empty() {
             return Ok(HashMap::new());
         }

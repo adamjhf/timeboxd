@@ -4,7 +4,7 @@ use futures::{StreamExt, stream};
 use tracing::{debug, warn};
 
 use crate::{
-    cache::{CacheManager, FilmCacheData},
+    cache::{CacheManager, CachedReleases, FilmCacheData},
     error::AppResult,
     models::{
         CountryReleases, FilmWithReleases, ReleaseCategory, ReleaseDate, WatchProvider,
@@ -83,7 +83,10 @@ pub async fn process(
     debug!(total_with_tmdb = all_films_with_tmdb.len(), "films with TMDB IDs");
 
     // Phase 5: Build list of all (tmdb_id, country) pairs needed
-    let release_requests = build_release_requests(&all_films_with_tmdb, country);
+    let release_requests = build_release_requests(
+        all_films_with_tmdb.iter().map(|(_, tmdb_id, ..)| *tmdb_id),
+        country,
+    );
     debug!(release_requests = release_requests.len(), "release cache requests");
 
     // Phase 6: Bulk load release cache
@@ -114,20 +117,19 @@ pub async fn process(
             tmdb_ids.entry(*tmdb_id).or_insert_with(Vec::new).push(country_code.clone());
         }
 
-        let items: Vec<AppResult<(i32, Vec<String>, Vec<CountryReleases>)>> =
-            stream::iter(tmdb_ids)
-                .map(|(tmdb_id, countries)| async move {
-                    let result = tmdb.get_release_dates(tmdb_id, &countries[0]).await?;
-                    let filtered_countries = result
-                        .all_countries
-                        .into_iter()
-                        .filter(|c| countries.contains(&c.country))
-                        .collect::<Vec<_>>();
-                    Ok((tmdb_id, countries, filtered_countries))
-                })
-                .buffer_unordered(max_concurrent.max(1))
-                .collect()
-                .await;
+        let items: Vec<AppResult<_>> = stream::iter(tmdb_ids)
+            .map(|(tmdb_id, countries)| async move {
+                let result = tmdb.get_release_dates(tmdb_id, &countries[0]).await?;
+                let filtered_countries = result
+                    .all_countries
+                    .into_iter()
+                    .filter(|c| countries.contains(&c.country))
+                    .collect::<Vec<_>>();
+                Ok((tmdb_id, countries, filtered_countries))
+            })
+            .buffer_unordered(max_concurrent.max(1))
+            .collect()
+            .await;
 
         for item in items {
             match item {
@@ -189,7 +191,7 @@ pub async fn process(
 
     debug!(result_count = results.len(), "completed processing releases");
 
-    let today: jiff::civil::Date = jiff::Zoned::now().into();
+    let today: jiff::civil::Date = jiff::ZonedDateTime::now().into();
 
     let provider_requests = build_provider_requests(&results, country, &today);
     debug!(provider_requests = provider_requests.len(), "provider cache requests");
@@ -291,17 +293,17 @@ async fn resolve_uncached_films(
 }
 
 fn build_release_requests(
-    films: &[(String, i32, String, Option<i16>, Option<String>)],
+    tmdb_ids: impl IntoIterator<Item = i32>,
     country: &str,
 ) -> Vec<(i32, String)> {
     let mut requests = Vec::new();
-    for (_, tmdb_id, _, _, _) in films {
-        requests.push((*tmdb_id, country.to_string()));
+    for tmdb_id in tmdb_ids {
+        requests.push((tmdb_id, country.to_string()));
         if country == "NZ" {
-            requests.push((*tmdb_id, "AU".to_string()));
+            requests.push((tmdb_id, "AU".to_string()));
         }
         if country != "US" {
-            requests.push((*tmdb_id, "US".to_string()));
+            requests.push((tmdb_id, "US".to_string()));
         }
     }
     requests
@@ -325,7 +327,7 @@ fn needs_provider_lookup(film: &FilmWithReleases, today: &jiff::civil::Date) -> 
 }
 
 fn get_releases_with_fallback_bulk(
-    cached_releases: &HashMap<(i32, String), (Vec<ReleaseDate>, Vec<ReleaseDate>)>,
+    cached_releases: &CachedReleases,
     new_releases: &HashMap<i32, Vec<CountryReleases>>,
     tmdb_id: i32,
     country: &str,
@@ -338,11 +340,11 @@ fn get_releases_with_fallback_bulk(
     let (local_upcoming_theatrical, local_already_available_theatrical): (Vec<_>, Vec<_>) =
         local_theatrical
             .into_iter()
-            .partition(|r| r.note.as_ref().map_or(true, |n| !n.contains("Already available")));
+            .partition(|r| r.note.as_ref().is_none_or(|n| !n.contains("Already available")));
     let (local_upcoming_streaming, local_already_available_streaming): (Vec<_>, Vec<_>) =
         local_streaming
             .into_iter()
-            .partition(|r| r.note.as_ref().map_or(true, |n| !n.contains("Already available")));
+            .partition(|r| r.note.as_ref().is_none_or(|n| !n.contains("Already available")));
 
     // Check for recent "Already available" releases first (prioritize over upcoming)
     if !local_already_available_theatrical.is_empty()
@@ -394,11 +396,11 @@ fn get_releases_with_fallback_bulk(
                 Vec<_>,
             ) = au_theatrical
                 .into_iter()
-                .partition(|r| r.note.as_ref().map_or(true, |n| !n.contains("Already available")));
+                .partition(|r| r.note.as_ref().is_none_or(|n| !n.contains("Already available")));
             let (mut au_upcoming_streaming, mut au_already_available_streaming): (Vec<_>, Vec<_>) =
-                au_streaming.into_iter().partition(|r| {
-                    r.note.as_ref().map_or(true, |n| !n.contains("Already available"))
-                });
+                au_streaming
+                    .into_iter()
+                    .partition(|r| r.note.as_ref().is_none_or(|n| !n.contains("Already available")));
 
             // Then mark with country code
             for rel in &mut au_upcoming_theatrical {
@@ -445,11 +447,11 @@ fn get_releases_with_fallback_bulk(
         let (mut us_upcoming_theatrical, mut us_already_available_theatrical): (Vec<_>, Vec<_>) =
             us_theatrical
                 .into_iter()
-                .partition(|r| r.note.as_ref().map_or(true, |n| !n.contains("Already available")));
+                .partition(|r| r.note.as_ref().is_none_or(|n| !n.contains("Already available")));
         let (mut us_upcoming_streaming, mut us_already_available_streaming): (Vec<_>, Vec<_>) =
             us_streaming
                 .into_iter()
-                .partition(|r| r.note.as_ref().map_or(true, |n| !n.contains("Already available")));
+                .partition(|r| r.note.as_ref().is_none_or(|n| !n.contains("Already available")));
 
         for rel in &mut us_upcoming_theatrical {
             rel.note = Some("US".to_string());
@@ -482,7 +484,7 @@ fn get_releases_with_fallback_bulk(
 }
 
 fn get_release_data(
-    cached_releases: &HashMap<(i32, String), (Vec<ReleaseDate>, Vec<ReleaseDate>)>,
+    cached_releases: &CachedReleases,
     new_releases: &HashMap<i32, Vec<CountryReleases>>,
     tmdb_id: i32,
     country: &str,
@@ -493,10 +495,10 @@ fn get_release_data(
     }
 
     // Try new data
-    if let Some(countries) = new_releases.get(&tmdb_id) {
-        if let Some(country_data) = countries.iter().find(|c| c.country == country) {
-            return (country_data.theatrical.clone(), country_data.streaming.clone());
-        }
+    if let Some(countries) = new_releases.get(&tmdb_id)
+        && let Some(country_data) = countries.iter().find(|c| c.country == country)
+    {
+        return (country_data.theatrical.clone(), country_data.streaming.clone());
     }
 
     (vec![], vec![])

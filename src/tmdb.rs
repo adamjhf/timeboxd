@@ -86,7 +86,8 @@ impl TmdbClient {
     ) -> AppResult<ReleaseDatesResult> {
         // Use mock data if access token is not provided
         if self.access_token.trim().is_empty() {
-            let today: Date = jiff::Timestamp::now().to_zoned(jiff::tz::TimeZone::UTC).date();
+            let today: Date =
+                jiff::Timestamp::now().to_zoned_datetime(jiff::tz::TimeZone::UTC).date();
             let future_date = today + jiff::Span::new().years(1);
 
             let theatrical = vec![ReleaseDate {
@@ -128,7 +129,7 @@ impl TmdbClient {
             .json()
             .await?;
 
-        let today: Date = jiff::Zoned::now().into();
+        let today: Date = jiff::ZonedDateTime::now().into();
 
         let mut all_countries = Vec::new();
 
@@ -145,7 +146,7 @@ impl TmdbClient {
                 };
                 let timestamp =
                     DateTimeParser::new().parse_timestamp(rd.release_date.as_bytes())?;
-                let date: Date = timestamp.to_zoned(jiff::tz::TimeZone::UTC).date();
+                let date: Date = timestamp.to_zoned_datetime(jiff::tz::TimeZone::UTC).date();
                 let note = rd.note.and_then(|s| {
                     let s = s.trim();
                     (!s.is_empty()).then(|| s.to_string())
@@ -186,28 +187,28 @@ impl TmdbClient {
             // Only include "Already available" if the latest release is within the last 2 years
             let two_years_ago = today - jiff::Span::new().years(2);
 
-            if has_past_theatrical && theatrical.is_empty() {
-                if let Some(latest) = theatrical_past.into_iter().max_by_key(|r| r.date) {
-                    if latest.date >= two_years_ago {
-                        theatrical.push(ReleaseDate {
-                            date: latest.date,
-                            release_type: ReleaseType::Theatrical,
-                            note: Some("Already available".to_string()),
-                        });
-                    }
-                }
+            if has_past_theatrical
+                && theatrical.is_empty()
+                && let Some(latest) = theatrical_past.into_iter().max_by_key(|r| r.date)
+                && latest.date >= two_years_ago
+            {
+                theatrical.push(ReleaseDate {
+                    date: latest.date,
+                    release_type: ReleaseType::Theatrical,
+                    note: Some("Already available".to_string()),
+                });
             }
 
-            if has_past_streaming && streaming.is_empty() {
-                if let Some(latest) = streaming_past.into_iter().max_by_key(|r| r.date) {
-                    if latest.date >= two_years_ago {
-                        streaming.push(ReleaseDate {
-                            date: latest.date,
-                            release_type: ReleaseType::Digital,
-                            note: Some("Already available".to_string()),
-                        });
-                    }
-                }
+            if has_past_streaming
+                && streaming.is_empty()
+                && let Some(latest) = streaming_past.into_iter().max_by_key(|r| r.date)
+                && latest.date >= two_years_ago
+            {
+                streaming.push(ReleaseDate {
+                    date: latest.date,
+                    release_type: ReleaseType::Digital,
+                    note: Some("Already available".to_string()),
+                });
             }
 
             all_countries.push(CountryReleases { country: country_code, theatrical, streaming });

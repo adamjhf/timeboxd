@@ -172,7 +172,7 @@ fn watchlist_summary(watchlist: &SavedWatchlist) -> String {
 }
 
 fn format_timestamp(ts: jiff::Timestamp) -> String {
-    ts.to_zoned(jiff::tz::TimeZone::system()).strftime("%-d %b %Y").to_string()
+    ts.to_zoned_datetime(jiff::tz::TimeZone::system()).strftime("%-d %b %Y").to_string()
 }
 
 pub fn results_fragment(
@@ -185,7 +185,7 @@ pub fn results_fragment(
     let age_days =
         (jiff::Timestamp::now().as_second() - watchlist.uploaded_at.as_second()) / 86_400;
 
-    let today: jiff::civil::Date = jiff::Zoned::now().into();
+    let today: jiff::civil::Date = jiff::ZonedDateTime::now().into();
     let current_year = today.year();
     let min_year = current_year - 1;
 
@@ -243,7 +243,7 @@ pub fn results_fragment(
     let mut no_releases: Vec<_> = films
         .iter()
         .filter(|f| f.category == ReleaseCategory::NoReleases)
-        .filter(|f| f.year.map_or(true, |y| y >= min_year))
+        .filter(|f| f.year.is_none_or(|y| y >= min_year))
         .collect();
 
     sort_by_first_release_date(&mut local_upcoming_films);
