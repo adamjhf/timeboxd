@@ -540,7 +540,7 @@ fn release_row<'a>(
     maud! {
         @if let Some(past) = past {
             div class="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm" {
-                span class=(format!("inline-flex flex-shrink-0 items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset {badge}")) {
+                span class=(format!("inline-flex w-[6.5rem] flex-shrink-0 items-center justify-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset {badge}")) {
                     (Raw::dangerously_create(format!(r#"<svg class="h-3.5 w-3.5 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="{icon}"/></svg>"#)))
                     (label)
                 }
