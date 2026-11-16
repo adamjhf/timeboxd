@@ -410,12 +410,14 @@ impl CacheManager {
         country: &str,
         providers: &[WatchProvider],
     ) -> AppResult<()> {
-        if providers.is_empty() {
-            return Ok(());
-        }
-
         let now = now_sec();
         let txn = self.db.begin().await?;
+
+        provider_cache::Entity::delete_many()
+            .filter(provider_cache::Column::TmdbId.eq(tmdb_id))
+            .filter(provider_cache::Column::Country.eq(country))
+            .exec(&txn)
+            .await?;
 
         for provider in providers {
             let model = provider_cache::ActiveModel {
@@ -488,4 +490,35 @@ impl CacheManager {
 
 fn now_sec() -> i64 {
     jiff::Timestamp::now().as_second()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn empty_provider_results_are_cached_and_replace_old_providers() {
+        let db = crate::db::connect_and_migrate("sqlite::memory:").await.unwrap();
+        let cache = CacheManager::new(db, 30, 24, 7);
+        let key = (550, "AU".to_string());
+
+        cache.put_providers(550, "AU", &[]).await.unwrap();
+        let cached = cache.get_providers(std::slice::from_ref(&key)).await.unwrap();
+        assert_eq!(cached.get(&key).map(Vec::len), Some(0));
+
+        let netflix = WatchProvider {
+            provider_id: 8,
+            provider_name: "Netflix".to_string(),
+            logo_path: "/netflix.png".to_string(),
+            link: None,
+            provider_type: ProviderType::Stream,
+        };
+        cache.put_providers(550, "AU", &[netflix]).await.unwrap();
+        let cached = cache.get_providers(std::slice::from_ref(&key)).await.unwrap();
+        assert_eq!(cached.get(&key).map(Vec::len), Some(1));
+
+        cache.put_providers(550, "AU", &[]).await.unwrap();
+        let cached = cache.get_providers(std::slice::from_ref(&key)).await.unwrap();
+        assert_eq!(cached.get(&key).map(Vec::len), Some(0));
+    }
 }
