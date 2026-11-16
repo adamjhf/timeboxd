@@ -131,38 +131,196 @@ pub fn index_page(saved: Option<&SavedWatchlist>, saved_country: Option<&str>) -
     )
 }
 
-pub fn processing_page(token: &str, country: &str) -> String {
+pub fn processing_page(token: &str, country: &str, saved: Option<&SavedWatchlist>) -> String {
     let url = format!(
         "/process?watchlist={}&country={}",
         urlencoding::encode(token),
         urlencoding::encode(country)
     );
+    let steps = [
+        ("matching", "Matching films on TMDB"),
+        ("releases", "Checking release dates"),
+        ("providers", "Checking where to stream"),
+    ];
 
     page(
-        "Upcoming film releases - Timeboxd",
+        "Finding release dates - Timeboxd",
         maud! {
-            div id="content" class="min-h-screen bg-slate-900 flex items-center justify-center" {
-                div class="max-w-xl w-full px-6" {
-                    div class="bg-slate-800 shadow-xl rounded-lg p-8 text-center border border-slate-700" {
-                        div class="mx-auto h-12 w-12 rounded-full border-4 border-slate-700 border-t-orange-600 animate-spin" {}
-                        h1 class="mt-6 text-xl font-semibold text-slate-100" { "Processing" }
-                        p class="mt-2 text-slate-400" { "Matching your watchlist and checking release dates." }
-                        p class="mt-2 text-sm text-slate-500" { "The first run can take a minute for large watchlists." }
+            div class="min-h-screen bg-slate-900" {
+                div id="content" class="min-h-screen flex items-center justify-center px-4 py-12" {
+                    div class="w-full max-w-md bg-slate-800 shadow-xl rounded-lg p-6 sm:p-8 border border-slate-700" {
+                        h1 class="text-xl font-semibold text-slate-100" { "Finding release dates" }
+                        p class="mt-1 text-sm text-slate-400" {
+                            @if let Some(watchlist) = saved {
+                                @if let Some(username) = &watchlist.username { "@" (username) " · " }
+                                (watchlist.films.len()) " films · "
+                            }
+                            (get_country_name(country))
+                        }
+
+                        div class="mt-6" {
+                            div class="flex items-baseline justify-between text-sm" {
+                                span id="progress-percent" class="font-semibold text-slate-100 tabular-nums" { "0%" }
+                                span id="progress-eta" class="text-slate-400" { "Starting…" }
+                            }
+                            div
+                                class="mt-2 h-2 rounded-full bg-slate-700 overflow-hidden"
+                                role="progressbar"
+                                aria-label="Progress"
+                                aria-valuemin="0"
+                                aria-valuemax="100"
+                                aria-valuenow="0"
+                                id="progress-bar"
+                            {
+                                div id="progress-fill" class="h-full w-0 rounded-full bg-orange-600 transition-[width] duration-500 ease-out" {}
+                            }
+                        }
+
+                        ol class="mt-6 space-y-3" {
+                            @for (key, label) in steps {
+                                li class="step flex items-center gap-3" data-step=(key) data-state="pending" {
+                                    span class="step-icon relative flex-shrink-0 h-5 w-5" {
+                                        span class="icon-pending absolute inset-0 rounded-full border-2 border-slate-600" {}
+                                        span class="icon-active hidden absolute inset-0 rounded-full border-2 border-slate-600 border-t-orange-500 animate-spin" {}
+                                        span class="icon-done hidden absolute inset-0 rounded-full bg-orange-600 text-[11px] font-bold leading-5 text-center text-white" aria-hidden="true" { "✓" }
+                                    }
+                                    span class="step-label flex-1 text-sm text-slate-500" { (label) }
+                                    span class="step-count text-xs text-slate-500 tabular-nums" {}
+                                }
+                            }
+                        }
+
+                        p class="mt-6 border-t border-slate-700 pt-4 text-xs text-slate-500" {
+                            "TMDB allows a few lookups a second, so the first run takes a while for big watchlists. Results are cached, so next time is much faster."
+                        }
                     }
                 }
             }
-            script { (Raw::dangerously_create(format!("
-                fetch('{}')
-                    .then(response => response.text())
-                    .then(html => {{
-                        document.getElementById('content').outerHTML = html;
-                    }})
-                    .catch(error => {{
-                        document.querySelector('#content .max-w-xl').innerHTML = '<div class=\"bg-slate-800 shadow-xl rounded-lg p-8 border border-slate-700\"><h1 class=\"text-2xl font-bold text-slate-100\">Error</h1><p class=\"mt-4 text-slate-400\">' + error.message + '</p></div>';
-                    }});
-            ", url))) }
+            (processing_script(&url))
         },
     )
+}
+
+fn processing_script(url: &str) -> impl Renderable {
+    let url = serde_json::to_string(url).unwrap_or_default();
+    maud! {
+        script {
+            (Raw::dangerously_create(format!(r#"
+                const STEPS = ['matching', 'releases', 'providers'];
+                const progress = {{}};
+                const startedAt = Date.now();
+                let firstWorkAt = null;
+                let shownFraction = 0;
+
+                function stepElement(step) {{
+                    return document.querySelector(`.step[data-step="${{step}}"]`);
+                }}
+
+                function setStepState(step, state, count) {{
+                    const el = stepElement(step);
+                    el.dataset.state = state;
+                    el.querySelector('.icon-pending').classList.toggle('hidden', state !== 'pending');
+                    el.querySelector('.icon-active').classList.toggle('hidden', state !== 'active');
+                    el.querySelector('.icon-done').classList.toggle('hidden', state !== 'done');
+                    const label = el.querySelector('.step-label');
+                    label.classList.toggle('text-slate-100', state === 'active');
+                    label.classList.toggle('text-slate-300', state === 'done');
+                    label.classList.toggle('text-slate-500', state === 'pending');
+                    el.querySelector('.step-count').textContent = count;
+                }}
+
+                function formatRemaining(seconds) {{
+                    if (seconds < 10) return 'Almost done';
+                    if (seconds < 60) return `About ${{Math.ceil(seconds / 10) * 10}} seconds left`;
+                    const minutes = Math.round(seconds / 60);
+                    return minutes <= 1 ? 'About a minute left' : `About ${{minutes}} minutes left`;
+                }}
+
+                function render() {{
+                    // Each lookup takes about as long as any other, so later steps are estimated
+                    // to need as many lookups as the latest known step.
+                    let done = 0, remaining = 0, estimate = 0, current = null;
+                    for (const step of STEPS) {{
+                        const p = progress[step];
+                        if (p) {{
+                            done += p.done;
+                            remaining += p.total - p.done;
+                            estimate = p.total;
+                            if (p.done < p.total) current = current || step;
+                        }} else {{
+                            remaining += estimate;
+                        }}
+                    }}
+                    const started = STEPS.filter(step => progress[step]);
+                    if (!current) current = STEPS[started.length] || null;
+
+                    for (const step of STEPS) {{
+                        const p = progress[step];
+                        if (!p) {{
+                            setStepState(step, step === current ? 'active' : 'pending', '');
+                        }} else if (p.total === 0) {{
+                            setStepState(step, 'done', 'Cached');
+                        }} else if (p.done >= p.total) {{
+                            setStepState(step, 'done', `${{p.total}}`);
+                        }} else {{
+                            setStepState(step, 'active', `${{p.done}} / ${{p.total}}`);
+                        }}
+                    }}
+
+                    const total = done + remaining;
+                    const stepsDone = STEPS.filter(s => progress[s] && progress[s].done >= progress[s].total).length;
+                    const fraction = total > 0 ? done / total : stepsDone / STEPS.length;
+                    shownFraction = Math.max(shownFraction, Math.min(fraction, 0.99));
+                    const percent = Math.round(shownFraction * 100);
+                    document.getElementById('progress-fill').style.width = `${{percent}}%`;
+                    document.getElementById('progress-percent').textContent = `${{percent}}%`;
+                    document.getElementById('progress-bar').setAttribute('aria-valuenow', percent);
+
+                    let eta = 'Estimating time…';
+                    if (done >= 3 && firstWorkAt) {{
+                        const rate = done / ((Date.now() - firstWorkAt) / 1000);
+                        eta = formatRemaining(remaining / rate);
+                    }} else if (remaining === 0 && started.length > 0) {{
+                        eta = 'Almost done';
+                    }}
+                    document.getElementById('progress-eta').textContent = eta;
+                }}
+
+                const events = new EventSource({url});
+                let finished = false;
+
+                events.addEventListener('progress', event => {{
+                    const p = JSON.parse(event.data);
+                    if (p.total > 0 && !firstWorkAt) firstWorkAt = Date.now();
+                    progress[p.step] = p;
+                    render();
+                }});
+
+                events.addEventListener('done', event => {{
+                    finished = true;
+                    events.close();
+                    document.getElementById('progress-fill').style.width = '100%';
+                    document.getElementById('content').outerHTML = event.data;
+                    window.scrollTo(0, 0);
+                }});
+
+                events.onerror = () => {{
+                    if (finished) return;
+                    events.close();
+                    document.getElementById('content').outerHTML = `
+                        <div id="content" class="min-h-screen flex items-center justify-center px-4 py-12">
+                            <div class="w-full max-w-md bg-slate-800 shadow-xl rounded-lg p-6 sm:p-8 border border-slate-700">
+                                <h1 class="text-xl font-semibold text-slate-100">Connection lost</h1>
+                                <p class="mt-2 text-sm text-slate-400">The connection to the server dropped before your release dates were ready. Lookups finished so far are saved, so trying again picks up where it left off.</p>
+                                <button class="mt-6 rounded-md bg-orange-600 px-4 py-2 font-semibold text-white hover:bg-orange-700" onclick="location.reload()">Try again</button>
+                            </div>
+                        </div>`;
+                }};
+
+                render();
+            "#)))
+        }
+    }
 }
 
 fn watchlist_summary(watchlist: &SavedWatchlist) -> String {

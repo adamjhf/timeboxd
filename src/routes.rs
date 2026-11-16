@@ -1,18 +1,23 @@
-use std::sync::Arc;
+use std::{convert::Infallible, sync::Arc};
 
 use anyhow::Context;
 use axum::{
     extract::{Multipart, Query, State},
-    http::{HeaderMap, HeaderValue, StatusCode},
-    response::{Html, IntoResponse, Redirect, Response},
+    http::{HeaderMap, StatusCode},
+    response::{
+        Html, IntoResponse, Redirect, Response,
+        sse::{Event, KeepAlive, Sse},
+    },
 };
 use axum_extra::extract::{CookieJar, cookie::Cookie};
+use futures::{Stream, StreamExt, channel::mpsc};
 use serde::Deserialize;
 use time::Duration;
 use tracing::{error, info};
 
 use crate::{
-    AppState, countries::COUNTRIES, error::AppResult, models::TrackRequest, templates, watchlist,
+    AppState, countries::COUNTRIES, error::AppResult, models::TrackRequest, processor::Progress,
+    templates, watchlist,
 };
 
 const WATCHLIST_COOKIE: &str = "watchlist";
@@ -81,6 +86,7 @@ pub async fn upload(
 }
 
 pub async fn track(
+    State(state): State<Arc<AppState>>,
     jar: CookieJar,
     Query(req): Query<TrackRequest>,
 ) -> AppResult<(CookieJar, Html<String>)> {
@@ -94,7 +100,12 @@ pub async fn track(
         return Err(anyhow::anyhow!("saved watchlist not found").into());
     }
 
-    Ok((remember(jar, &token, &country), Html(templates::processing_page(&token, &country))))
+    let saved = watchlist::load(state.cache.db(), &token).await?;
+
+    Ok((
+        remember(jar, &token, &country),
+        Html(templates::processing_page(&token, &country, saved.as_ref())),
+    ))
 }
 
 #[derive(Debug, Deserialize)]
@@ -103,58 +114,70 @@ pub struct ProcessQuery {
     country: String,
 }
 
+/// Streams `progress` events while TMDB requests run, then one `done` event with the results HTML.
+/// Processing continues if the browser disconnects, so the cache still fills.
 pub async fn process(
     State(state): State<Arc<AppState>>,
     Query(q): Query<ProcessQuery>,
-) -> Response {
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let token = q.watchlist.trim().to_string();
     let country = q.country.trim().to_uppercase();
 
     info!(country = %country, "processing request");
 
-    let result = async {
-        if !is_country_code(&country) {
-            anyhow::bail!("country must be a 2-letter code");
+    let (tx, rx) = mpsc::unbounded();
+    tokio::spawn(async move {
+        let progress_tx = tx.clone();
+        let on_progress = move |progress: Progress| {
+            if let Ok(event) = Event::default().event("progress").json_data(progress) {
+                let _ = progress_tx.unbounded_send(event);
+            }
+        };
+
+        let result = async {
+            if !is_country_code(&country) {
+                anyhow::bail!("country must be a 2-letter code");
+            }
+
+            let saved = watchlist::load(state.cache.db(), &token)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("saved watchlist not found"))?;
+
+            let today: jiff::civil::Date = jiff::ZonedDateTime::now().into();
+            let (films, unmatched) = crate::processor::process(
+                &state.cache,
+                &state.tmdb,
+                saved.films.clone(),
+                &country,
+                state.config.max_concurrent,
+                today.year(),
+                &on_progress,
+            )
+            .await?;
+            info!(
+                result_count = films.len(),
+                unmatched_count = unmatched.len(),
+                "completed processing"
+            );
+
+            Ok::<_, anyhow::Error>(templates::results_fragment(
+                &saved, &country, &films, &unmatched,
+            ))
         }
+        .await;
 
-        let saved = watchlist::load(state.cache.db(), &token)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("saved watchlist not found"))?;
+        let body = match result {
+            Ok(html) => html,
+            Err(err) => {
+                error!(error = %err, "request failed");
+                let user_friendly_error = crate::error::error_to_user_message(&err);
+                templates::error_fragment(user_friendly_error)
+            },
+        };
+        let _ = tx.unbounded_send(Event::default().event("done").data(body));
+    });
 
-        let today: jiff::civil::Date = jiff::ZonedDateTime::now().into();
-        let (films, unmatched) = crate::processor::process(
-            &state.cache,
-            &state.tmdb,
-            saved.films.clone(),
-            &country,
-            state.config.max_concurrent,
-            today.year(),
-        )
-        .await?;
-        info!(
-            result_count = films.len(),
-            unmatched_count = unmatched.len(),
-            "completed processing"
-        );
-
-        Ok::<_, anyhow::Error>(templates::results_fragment(&saved, &country, &films, &unmatched))
-    }
-    .await;
-
-    let body = match result {
-        Ok(html) => html,
-        Err(err) => {
-            error!(error = %err, "request failed");
-            let user_friendly_error = crate::error::error_to_user_message(&err);
-            templates::error_fragment(user_friendly_error)
-        },
-    };
-
-    let mut resp = Html(body).into_response();
-    *resp.status_mut() = StatusCode::OK;
-    resp.headers_mut().insert("datastar-selector", HeaderValue::from_static("#content"));
-    resp.headers_mut().insert("datastar-mode", HeaderValue::from_static("outer"));
-    resp
+    Sse::new(rx.map(Ok)).keep_alive(KeepAlive::default())
 }
 
 fn is_country_code(country: &str) -> bool {

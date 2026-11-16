@@ -1,6 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use futures::{StreamExt, stream};
+use serde::Serialize;
 use tracing::{debug, warn};
 
 use crate::{
@@ -13,6 +14,23 @@ use crate::{
     tmdb::TmdbClient,
 };
 
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Step {
+    Matching,
+    Releases,
+    Providers,
+}
+
+/// How many of a step's TMDB requests have finished. Cached films need no request, so `total` is
+/// 0 when a step is fully cached.
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct Progress {
+    pub step: Step,
+    pub done: usize,
+    pub total: usize,
+}
+
 /// Returns the films matched on TMDB with their releases, and the films that couldn't be matched.
 pub async fn process(
     cache: &CacheManager,
@@ -21,6 +39,7 @@ pub async fn process(
     country: &str,
     max_concurrent: usize,
     current_year: i16,
+    on_progress: &(dyn Fn(Progress) + Send + Sync),
 ) -> AppResult<(Vec<FilmWithReleases>, Vec<WishlistFilm>)> {
     let cutoff_year = current_year.saturating_sub(3);
 
@@ -48,7 +67,7 @@ pub async fn process(
         films.iter().filter(|f| !cached_films.contains_key(&f.letterboxd_uri)).cloned().collect();
     debug!(uncached_count = uncached.len(), "films needing a TMDB match");
 
-    let newly_resolved = resolve_uncached_films(tmdb, uncached, max_concurrent).await;
+    let newly_resolved = resolve_uncached_films(tmdb, uncached, max_concurrent, on_progress).await;
     cache.upsert_films(newly_resolved.clone()).await?;
     debug!(resolved_count = newly_resolved.len(), "newly resolved films");
 
@@ -108,6 +127,8 @@ pub async fn process(
     debug!(uncached_requests_count = uncached_requests.len(), uncached = ?uncached_requests, "uncached requests");
 
     let mut new_releases = HashMap::new();
+    let release_ids = uncached_requests.iter().map(|(id, _)| id).collect::<HashSet<_>>().len();
+    on_progress(Progress { step: Step::Releases, done: 0, total: release_ids });
     if !uncached_requests.is_empty() {
         debug!(uncached_requests = uncached_requests.len(), "fetching uncached releases from TMDB");
 
@@ -128,6 +149,11 @@ pub async fn process(
                 Ok((tmdb_id, countries, filtered_countries))
             })
             .buffer_unordered(max_concurrent.max(1))
+            .enumerate()
+            .map(|(i, item)| {
+                on_progress(Progress { step: Step::Releases, done: i + 1, total: release_ids });
+                item
+            })
             .collect()
             .await;
 
@@ -210,6 +236,8 @@ pub async fn process(
     );
 
     let mut new_providers: HashMap<(i32, String), Vec<WatchProvider>> = HashMap::new();
+    let provider_total = uncached_provider_requests.len();
+    on_progress(Progress { step: Step::Providers, done: 0, total: provider_total });
     if !uncached_provider_requests.is_empty() {
         let items: Vec<AppResult<(i32, String, Vec<WatchProvider>)>> =
             stream::iter(uncached_provider_requests)
@@ -219,6 +247,15 @@ pub async fn process(
                     Ok((tmdb_id, country_code, providers))
                 })
                 .buffer_unordered(max_concurrent.max(1))
+                .enumerate()
+                .map(|(i, item)| {
+                    on_progress(Progress {
+                        step: Step::Providers,
+                        done: i + 1,
+                        total: provider_total,
+                    });
+                    item
+                })
                 .collect()
                 .await;
 
@@ -261,15 +298,23 @@ async fn resolve_uncached_films(
     tmdb: &TmdbClient,
     films: Vec<WishlistFilm>,
     max_concurrent: usize,
+    on_progress: &(dyn Fn(Progress) + Send + Sync),
 ) -> Vec<FilmCacheData> {
     debug!(uncached_count = films.len(), "resolving uncached films");
 
+    let total = films.len();
+    on_progress(Progress { step: Step::Matching, done: 0, total });
     stream::iter(films)
         .map(|film| async move {
             let found = tmdb.search_movie(&film.title, film.year).await;
             (film, found)
         })
         .buffer_unordered(max_concurrent.max(1))
+        .enumerate()
+        .map(|(i, item)| {
+            on_progress(Progress { step: Step::Matching, done: i + 1, total });
+            item
+        })
         .filter_map(|(film, found)| async move {
             match found {
                 Ok(found) => {
