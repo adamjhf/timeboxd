@@ -10,7 +10,7 @@ use axum::{
     },
 };
 use axum_extra::extract::{CookieJar, cookie::Cookie};
-use futures::{Stream, StreamExt, channel::mpsc};
+use futures::{StreamExt, channel::mpsc};
 use serde::Deserialize;
 use time::Duration;
 use tracing::{error, info};
@@ -119,7 +119,7 @@ pub struct ProcessQuery {
 pub async fn process(
     State(state): State<Arc<AppState>>,
     Query(q): Query<ProcessQuery>,
-) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+) -> Response {
     let token = q.watchlist.trim().to_string();
     let country = q.country.trim().to_uppercase();
 
@@ -177,7 +177,12 @@ pub async fn process(
         let _ = tx.unbounded_send(Event::default().event("done").data(body));
     });
 
-    Sse::new(rx.map(Ok)).keep_alive(KeepAlive::default())
+    // Buffering or recompressing this stream delays progress until a large batch has accumulated.
+    (
+        [("x-accel-buffering", "no"), ("cache-control", "no-cache, no-transform")],
+        Sse::new(rx.map(Ok::<_, Infallible>)).keep_alive(KeepAlive::default()),
+    )
+        .into_response()
 }
 
 fn is_country_code(country: &str) -> bool {
@@ -198,4 +203,53 @@ fn remember(jar: CookieJar, token: &str, country: &str) -> CookieJar {
 
 fn upload_error(message: &str) -> Response {
     (StatusCode::BAD_REQUEST, Html(templates::error_page(message.to_string()))).into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::{Router, body::Body, http::Request, routing::get};
+    use tower::ServiceExt;
+
+    use super::*;
+    use crate::{cache::CacheManager, config::Config, tmdb::TmdbClient};
+
+    #[tokio::test]
+    async fn progress_stream_disables_proxy_buffering_and_transformation() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let db = crate::db::connect_and_migrate("sqlite::memory:").await.unwrap();
+        let config = Arc::new(Config {
+            addr: "127.0.0.1:0".parse().unwrap(),
+            tmdb_access_token: String::new(),
+            tmdb_base_url: "https://api.themoviedb.org/3".to_string(),
+            database_url: "sqlite::memory:".to_string(),
+            cache_ttl_days: 7,
+            release_cache_hours: 24,
+            provider_cache_days: 7,
+            tmdb_rps: 4,
+            max_concurrent: 5,
+        });
+        let state = Arc::new(AppState {
+            cache: CacheManager::new(db, 7, 24, 7),
+            tmdb: Arc::new(TmdbClient::new(
+                reqwest::Client::new(),
+                String::new(),
+                config.tmdb_base_url.clone(),
+                4,
+            )),
+            config,
+        });
+        let response = Router::new()
+            .route("/process", get(process))
+            .with_state(state)
+            .oneshot(
+                Request::get("/process?watchlist=missing&country=AU").body(Body::empty()).unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()["content-type"], "text/event-stream");
+        assert_eq!(response.headers()["x-accel-buffering"], "no");
+        assert_eq!(response.headers()["cache-control"], "no-cache, no-transform");
+    }
 }
