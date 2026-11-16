@@ -1,4 +1,5 @@
 use hypertext::{Raw, maud, prelude::*};
+use jiff::civil::Date;
 
 use crate::{
     countries::{COUNTRIES, get_country_name},
@@ -140,8 +141,8 @@ pub fn processing_page(token: &str, country: &str) -> String {
     page(
         "Upcoming film releases - Timeboxd",
         maud! {
-            div class="min-h-screen bg-slate-900 flex items-center justify-center" {
-                div id="content" class="max-w-xl w-full px-6" {
+            div id="content" class="min-h-screen bg-slate-900 flex items-center justify-center" {
+                div class="max-w-xl w-full px-6" {
                     div class="bg-slate-800 shadow-xl rounded-lg p-8 text-center border border-slate-700" {
                         div class="mx-auto h-12 w-12 rounded-full border-4 border-slate-700 border-t-orange-600 animate-spin" {}
                         h1 class="mt-6 text-xl font-semibold text-slate-100" { "Processing" }
@@ -154,10 +155,10 @@ pub fn processing_page(token: &str, country: &str) -> String {
                 fetch('{}')
                     .then(response => response.text())
                     .then(html => {{
-                        document.getElementById('content').innerHTML = html;
+                        document.getElementById('content').outerHTML = html;
                     }})
                     .catch(error => {{
-                        document.getElementById('content').innerHTML = '<div class=\"bg-slate-800 shadow-xl rounded-lg p-8 border border-slate-700\"><h1 class=\"text-2xl font-bold text-slate-100\">Error</h1><p class=\"mt-4 text-slate-400\">' + error.message + '</p></div>';
+                        document.querySelector('#content .max-w-xl').innerHTML = '<div class=\"bg-slate-800 shadow-xl rounded-lg p-8 border border-slate-700\"><h1 class=\"text-2xl font-bold text-slate-100\">Error</h1><p class=\"mt-4 text-slate-400\">' + error.message + '</p></div>';
                     }});
             ", url))) }
         },
@@ -185,179 +186,190 @@ pub fn results_fragment(
     let age_days =
         (jiff::Timestamp::now().as_second() - watchlist.uploaded_at.as_second()) / 86_400;
 
-    let today: jiff::civil::Date = jiff::ZonedDateTime::now().into();
-    let current_year = today.year();
-    let min_year = current_year - 1;
+    let today: Date = jiff::ZonedDateTime::now().into();
+    let min_year = today.year() - 1;
 
     let mut unmatched: Vec<_> =
         unmatched.iter().filter(|f| f.year.is_none_or(|y| y >= min_year)).collect();
     unmatched.sort_by(|a, b| a.title.cmp(&b.title));
 
-    fn sort_by_first_release_date(films: &mut Vec<&FilmWithReleases>) {
-        films.sort_by(|a, b| {
-            let a_first_date = a.theatrical.first().or_else(|| a.streaming.first()).map(|r| r.date);
-            let b_first_date = b.theatrical.first().or_else(|| b.streaming.first()).map(|r| r.date);
+    let recent_films = |category| {
+        films
+            .iter()
+            .filter(move |f| f.category == category)
+            .filter(|f| f.year.is_some_and(|y| y >= min_year))
+    };
+    let dates = |f: &FilmWithReleases| {
+        f.theatrical.iter().chain(&f.streaming).map(|r| r.date).collect::<Vec<_>>()
+    };
 
-            match (a_first_date, b_first_date) {
-                (Some(ad), Some(bd)) => ad.cmp(&bd).then(a.title.cmp(&b.title)),
-                (Some(_), None) => std::cmp::Ordering::Less,
-                (None, Some(_)) => std::cmp::Ordering::Greater,
-                (None, None) => a.title.cmp(&b.title),
-            }
-        });
-    }
-
-    fn sort_by_release_date(films: &mut Vec<&FilmWithReleases>) {
-        films.sort_by(|a, b| {
-            let a_date = a.theatrical.first().or_else(|| a.streaming.first()).map(|r| r.date);
-            let b_date = b.theatrical.first().or_else(|| b.streaming.first()).map(|r| r.date);
-
-            match (a_date, b_date) {
-                (Some(ad), Some(bd)) => ad.cmp(&bd).then(a.title.cmp(&b.title)),
-                (Some(_), None) => std::cmp::Ordering::Less,
-                (None, Some(_)) => std::cmp::Ordering::Greater,
-                (None, None) => a.title.cmp(&b.title),
-            }
-        });
-    }
-
-    fn sort_by_year(films: &mut Vec<&FilmWithReleases>) {
-        films.sort_by(|a, b| match (a.year, b.year) {
-            (Some(ay), Some(by)) => ay.cmp(&by).then(a.title.cmp(&b.title)),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => a.title.cmp(&b.title),
-        });
-    }
-
-    let mut local_upcoming_films: Vec<_> = films
-        .iter()
-        .filter(|f| f.category == ReleaseCategory::LocalUpcoming)
-        .filter(|f| f.year.is_some_and(|y| y >= min_year))
+    let mut upcoming: Vec<_> = recent_films(ReleaseCategory::LocalUpcoming)
+        .filter_map(|f| {
+            let dates = dates(f);
+            let next = dates.iter().filter(|d| **d >= today).min().or(dates.iter().min());
+            next.map(|d| (*d, f))
+        })
         .collect();
-    let mut local_already_available_films: Vec<_> = films
-        .iter()
-        .filter(|f| f.category == ReleaseCategory::LocalAlreadyAvailable)
-        .filter(|f| f.year.is_some_and(|y| y >= min_year))
+    upcoming.sort_by(|(ad, a), (bd, b)| ad.cmp(bd).then(a.title.cmp(&b.title)));
+
+    let mut released: Vec<_> = recent_films(ReleaseCategory::LocalAlreadyAvailable)
+        .filter_map(|f| {
+            let dates = dates(f);
+            let latest = dates.iter().filter(|d| **d < today).max().or(dates.iter().max());
+            latest.map(|d| (*d, f))
+        })
         .collect();
-    let mut no_releases: Vec<_> = films
+    released.sort_by(|(ad, a), (bd, b)| bd.cmp(ad).then(a.title.cmp(&b.title)));
+
+    let mut no_dates: Vec<_> = films
         .iter()
         .filter(|f| f.category == ReleaseCategory::NoReleases)
         .filter(|f| f.year.is_none_or(|y| y >= min_year))
         .collect();
+    no_dates.sort_by(|a, b| a.year.cmp(&b.year).then(a.title.cmp(&b.title)));
 
-    sort_by_first_release_date(&mut local_upcoming_films);
-    sort_by_release_date(&mut local_already_available_films);
-    sort_by_year(&mut no_releases);
+    let tabs = [
+        ("upcoming", "Upcoming", upcoming.len()),
+        ("released", "Released", released.len()),
+        ("no-dates", "No dates", no_dates.len() + unmatched.len()),
+    ];
+    let tabs: Vec<_> = tabs.into_iter().filter(|(_, _, count)| *count > 0).collect();
+    let tab_css: String = tabs
+        .iter()
+        .map(|(id, ..)| {
+            format!(
+                "#tab-{id}:checked~.tab-panels>.panel-{id}{{display:block}}#tab-{id}:checked~nav \
+                 label[for=tab-{id}]{{background:#334155;color:#f8fafc}}#tab-{id}:\
+                 focus-visible~nav label[for=tab-{id}]{{outline:2px solid #f97316}}"
+            )
+        })
+        .collect();
+
+    let uses_fallback = films
+        .iter()
+        .flat_map(|f| f.theatrical.iter().chain(&f.streaming))
+        .any(|r| r.note.as_deref().is_some_and(|n| n != country));
+    let fallback = if country == "NZ" { "Australian or US" } else { "US" };
 
     content_div(maud! {
-        div class="max-w-4xl mx-auto px-3 py-4 sm:px-6" {
-             div class="flex items-start justify-between gap-4" {
-                 div class="flex-1 min-w-0" {
-                     h1 class="text-xl sm:text-2xl font-bold text-slate-100" { "Timeboxd" }
-                     p class="mt-1 text-sm text-slate-400 whitespace-nowrap" { "Local release dates for your Letterboxd watchlist" }
-                     p class="mt-1 text-sm text-slate-400" {
-                         @if let Some(username) = &watchlist.username {
-                             a class="text-orange-500 hover:text-orange-400" href=(format!("https://letterboxd.com/{}/", urlencoding::encode(username))) target="_blank" rel="noopener noreferrer" {
-                                 "@" (username)
-                             }
-                         } @else {
-                             "Your watchlist"
-                         }
-                         " · " (country_name)
-                     }
-                     p class="mt-1 text-xs text-slate-500" {
-                         "From your export on " (format_timestamp(watchlist.uploaded_at)) " · "
-                         a class="text-orange-500 hover:text-orange-400" href="/" { "Update" }
-                         " · Bookmark this page to come back without uploading again."
-                     }
-                     @if age_days >= STALE_AFTER_DAYS {
-                         p class="mt-1 text-xs text-amber-400" {
-                             "This export is " (age_days) " days old. Upload a new one to include films you've added since."
-                         }
-                     }
-                 }
-                 a class="mt-2 text-sm text-orange-500 hover:text-orange-400 flex-shrink-0" href="/" { "New query" }
-              }
-
-            @if films.is_empty() && unmatched.is_empty() {
-                div class="mt-4 bg-slate-800 shadow-xl rounded-lg p-4 border border-slate-700" {
-                    p class="text-slate-400" { "No recent films found in watchlist." }
+        div class="max-w-3xl mx-auto px-3 pt-5 pb-10 sm:px-6" {
+            header class="flex items-start justify-between gap-4" {
+                div class="min-w-0" {
+                    a class="text-xl font-bold text-slate-100 hover:text-orange-400" href="/" { "Timeboxd" }
+                    p class="mt-0.5 text-sm text-slate-400" {
+                        @if let Some(username) = &watchlist.username {
+                            a class="text-slate-300 hover:text-orange-400" href=(format!("https://letterboxd.com/{}/", urlencoding::encode(username))) target="_blank" rel="noopener noreferrer" {
+                                "@" (username)
+                            }
+                            " · "
+                        }
+                        (country_name) " · " span class="whitespace-nowrap" { "exported " (format_timestamp(watchlist.uploaded_at)) }
+                    }
+                    @if age_days >= STALE_AFTER_DAYS {
+                        p class="mt-1 text-xs text-amber-400" {
+                            "This export is " (age_days) " days old and won't include films you've added since."
+                        }
+                    }
                 }
+                a class="flex-shrink-0 mt-1 rounded-md border border-slate-600 px-2.5 py-1 text-xs font-medium text-slate-300 hover:border-orange-500 hover:text-orange-400" href="/" { "New export" }
+            }
+
+            @if tabs.is_empty() {
+                p class="mt-6 rounded-lg border border-slate-700 bg-slate-800 p-4 text-slate-400" { "No recent films found in your watchlist." }
             } @else {
-                @if !local_upcoming_films.is_empty() {
-                    div class="mt-4" {
-                        h2 class="text-lg font-semibold text-slate-200 mb-2" { "Upcoming releases" }
-                        @if country == "NZ" {
-                            p class="text-sm text-slate-400 mb-2" { "Falls back to Australia then US release dates if no local dates found" }
-                        } @else {
-                            p class="text-sm text-slate-400 mb-2" { "Falls back to US release dates if no local dates found" }
-                        }
-                        div class="space-y-2" {
-                            @for film in &local_upcoming_films {
-                                (film_card(film))
-                            }
-                        }
+                style { (Raw::dangerously_create(format!(".tab-panel{{display:none}}{tab_css}"))) }
+                div class="mt-4" {
+                    @for (i, (id, ..)) in tabs.iter().enumerate() {
+                        input type="radio" name="tab" class="sr-only" id=(format!("tab-{id}")) checked[i == 0];
                     }
-                }
-
-
-
-                @if !local_already_available_films.is_empty() {
-                    div class="mt-6" {
-                        h2 class="text-lg font-semibold text-slate-200 mb-2" { "Recent releases" }
-                        p class="text-sm text-slate-400 mb-2" { "Films released in the last year" }
-                        @if country == "NZ" {
-                            p class="text-sm text-slate-400 mb-2" { "Falls back to Australia then US release dates if no local dates found" }
-                        } @else {
-                            p class="text-sm text-slate-400 mb-2" { "Falls back to US release dates if no local dates found" }
-                        }
-                        div class="space-y-2" {
-                            @for film in &local_already_available_films {
-                                (film_card(film))
-                            }
-                        }
-                    }
-                }
-
-                @if !no_releases.is_empty() {
-                    div class="mt-6" {
-                        h2 class="text-lg font-semibold text-slate-200 mb-2" { "No release dates found" }
-                        div class="space-y-2" {
-                            @for film in &no_releases {
-                                (film_card(film))
-                            }
-                        }
-                    }
-                }
-
-                @if !unmatched.is_empty() {
-                    div class="mt-6" {
-                        h2 class="text-lg font-semibold text-slate-200 mb-2" { "Couldn't find on TMDB" }
-                        p class="text-sm text-slate-400 mb-2" { "No film on TMDB has exactly this title and year." }
-                        ul class="bg-slate-800 shadow-xl rounded border border-slate-700 divide-y divide-slate-700" {
-                            @for film in &unmatched {
-                                li class="px-3 py-2 text-sm" {
-                                    a class="text-slate-200 hover:text-orange-500" href=(film.letterboxd_uri) target="_blank" rel="noopener noreferrer" {
-                                        (film.title)
-                                        @if let Some(year) = film.year {
-                                            span class="ml-1.5 text-slate-400" { "(" (year) ")" }
-                                        }
-                                    }
+                    nav class="sticky top-0 z-20 -mx-3 px-3 py-2 sm:-mx-6 sm:px-6 bg-slate-900/90 backdrop-blur" {
+                        div class="flex gap-1 rounded-lg bg-slate-800 p-1 border border-slate-700" {
+                            @for (id, label, count) in &tabs {
+                                label for=(format!("tab-{id}")) class="flex-1 cursor-pointer select-none rounded-md px-2 py-1.5 text-center text-sm font-medium text-slate-400 hover:text-slate-200" {
+                                    (label)
+                                    span class="ml-1.5 text-xs text-slate-500" { (count) }
                                 }
                             }
                         }
                     }
-                }
-
-                @if local_upcoming_films.is_empty() && local_already_available_films.is_empty() && no_releases.is_empty() && unmatched.is_empty() {
-                    div class="mt-4 bg-slate-800 shadow-xl rounded-lg p-4 border border-slate-700" {
-                        p class="text-slate-400" { "No films processed." }
+                    div class="tab-panels mt-2" {
+                        div class="tab-panel panel-upcoming" {
+                            (month_groups(&upcoming, today, country))
+                        }
+                        div class="tab-panel panel-released" {
+                            (month_groups(&released, today, country))
+                        }
+                        div class="tab-panel panel-no-dates" {
+                            @if !no_dates.is_empty() {
+                                p class="mt-2 mb-2 text-sm text-slate-400" { "No cinema or digital release dates on TMDB yet." }
+                                (title_list(no_dates.iter().map(|f| (f.title.as_str(), f.year, f.letterboxd_uri.as_str()))))
+                            }
+                            @if !unmatched.is_empty() {
+                                h2 class="mt-6 mb-1 text-sm font-semibold text-slate-200" { "Not found on TMDB" }
+                                p class="mb-2 text-sm text-slate-400" { "No film on TMDB has exactly this title and year." }
+                                (title_list(unmatched.iter().map(|f| (f.title.as_str(), f.year, f.letterboxd_uri.as_str()))))
+                            }
+                        }
                     }
+                }
+            }
+
+            footer class="mt-10 space-y-1 border-t border-slate-800 pt-4 text-xs text-slate-500" {
+                @if uses_fallback {
+                    p {
+                        "Where " (country_name) " has no dates yet, " (fallback) " dates are shown and tagged with the country."
+                    }
+                }
+                p { "Bookmark this page to come back without uploading again." }
+                p {
+                    "Release dates and posters from "
+                    a class="text-slate-400 hover:text-orange-400" href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer" { "TMDB" }
+                    ", streaming availability from JustWatch."
                 }
             }
         }
     })
+}
+
+fn month_groups<'a>(
+    films: &'a [(Date, &'a FilmWithReleases)],
+    today: Date,
+    country: &'a str,
+) -> impl Renderable + 'a {
+    maud! {
+        @for group in films.chunk_by(|(a, _), (b, _)| (a.year(), a.month()) == (b.year(), b.month())) {
+            section {
+                h2 class="mt-4 mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500" {
+                    (group[0].0.strftime("%B %Y").to_string())
+                }
+                div class="space-y-2" {
+                    @for (_, film) in group {
+                        (film_card(film, today, country))
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn title_list<'a>(
+    films: impl Iterator<Item = (&'a str, Option<i16>, &'a str)> + 'a,
+) -> impl Renderable + 'a {
+    let films: Vec<_> = films.collect();
+    maud! {
+        ul class="rounded-lg border border-slate-700 bg-slate-800 divide-y divide-slate-700" {
+            @for (title, year, uri) in &films {
+                li class="px-3 py-2 text-sm" {
+                    a class="text-slate-200 hover:text-orange-400" href=(uri) target="_blank" rel="noopener noreferrer" {
+                        (title)
+                        @if let Some(year) = year {
+                            span class="ml-1.5 text-slate-500" { (year) }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 pub fn error_fragment(message: String) -> String {
@@ -400,7 +412,7 @@ fn page(title: &str, body: impl Renderable) -> String {
                 script src=(TAILWIND_CDN) {}
                 script type="module" src=(DATASTAR_CDN) {}
             }
-            body { (body) }
+            body class="bg-slate-900" { (body) }
         }
     }
     .render()
@@ -408,58 +420,42 @@ fn page(title: &str, body: impl Renderable) -> String {
 }
 
 fn content_div(inner: impl Renderable) -> String {
-    maud! { div id="content" { (inner) } }.render().into_inner()
+    maud! { div id="content" class="min-h-screen bg-slate-900" { (inner) } }.render().into_inner()
 }
 
-fn film_card(film: &FilmWithReleases) -> impl Renderable + '_ {
-    let letterboxd_url = film.letterboxd_uri.clone();
-
+fn film_card<'a>(
+    film: &'a FilmWithReleases,
+    today: Date,
+    country: &'a str,
+) -> impl Renderable + 'a {
     maud! {
-        div class="bg-slate-800 shadow-xl rounded p-3 flex gap-3 border border-slate-700" {
-            @if let Some(poster_path) = &film.poster_path {
-                a
-                    class="block flex-shrink-0 w-16 sm:w-20"
-                    href=(letterboxd_url.clone())
-                    target="_blank"
-                    rel="noopener noreferrer"
-                {
+        article class="flex gap-3 rounded-lg border border-slate-700/70 bg-slate-800 p-2.5" {
+            a class="block flex-shrink-0" href=(&film.letterboxd_uri) target="_blank" rel="noopener noreferrer" tabindex="-1" {
+                @if let Some(poster_path) = &film.poster_path {
                     img
-                        class="w-16 h-24 sm:w-20 sm:h-30 object-cover rounded"
-                        src=(format!("https://image.tmdb.org/t/p/w200{}", poster_path))
-                        alt=(format!("{} poster", film.title))
+                        class="w-12 h-[72px] sm:w-14 sm:h-[84px] object-cover rounded"
+                        src=(format!("https://image.tmdb.org/t/p/w154{}", poster_path))
+                        alt=""
                         loading="lazy"
-                        width="80"
-                        height="120";
-                }
-            } @else {
-                div class="flex-shrink-0 w-16 h-24 sm:w-20 sm:h-30 bg-slate-700 rounded flex items-center justify-center border border-slate-600" {
-                    span class="text-xs text-slate-500" { "No poster" }
+                        width="64"
+                        height="96";
+                } @else {
+                    div class="w-12 h-[72px] sm:w-14 sm:h-[84px] rounded bg-slate-700" {}
                 }
             }
             div class="flex-1 min-w-0" {
-                div class="flex items-start justify-between gap-2" {
-                    div class="flex-1 min-w-0" {
-                        h2 class="text-base sm:text-lg font-semibold" {
-                            a class="text-slate-100 hover:text-orange-500" href=(letterboxd_url) target="_blank" rel="noopener noreferrer" {
-                                (film.title)
-                                @if let Some(year) = film.year {
-                                    span class="ml-1.5 font-normal text-slate-400" { "(" (year) ")" }
-                                }
-                            }
-                        }
-                        div class="mt-0.5 text-xs" {
-                            a class="text-slate-500 hover:text-slate-400" href=(format!("https://www.themoviedb.org/movie/{}", film.tmdb_id)) target="_blank" rel="noopener noreferrer" {
-                                "TMDB"
-                            }
-                        }
+                h3 class="font-semibold leading-snug" {
+                    a class="text-slate-100 hover:text-orange-400" href=(&film.letterboxd_uri) target="_blank" rel="noopener noreferrer" {
+                        (film.title)
+                    }
+                    @if let Some(year) = film.year {
+                        span class="ml-1.5 font-normal text-slate-500" { (year) }
                     }
                 }
-
-                div class="mt-2 grid grid-cols-2 sm:grid-cols-2 gap-3" {
-                    (release_list("Theatrical", &film.theatrical, ReleaseType::Theatrical))
-                    (release_list("Streaming", &film.streaming, ReleaseType::Digital))
+                div class="mt-1.5 space-y-1" {
+                    (release_row("Cinemas", &film.theatrical, ReleaseType::Theatrical, today, country))
+                    (release_row("Streaming", &film.streaming, ReleaseType::Digital, today, country))
                 }
-
                 @if !film.streaming_providers.is_empty() {
                     (provider_list(&film.streaming_providers))
                 }
@@ -469,44 +465,23 @@ fn film_card(film: &FilmWithReleases) -> impl Renderable + '_ {
 }
 
 fn provider_list(providers: &[WatchProvider]) -> impl Renderable + '_ {
-    let stream_providers: Vec<_> =
-        providers.iter().filter(|p| p.provider_type == ProviderType::Stream).collect();
-    let rent_providers: Vec<_> =
-        providers.iter().filter(|p| p.provider_type == ProviderType::Rent).collect();
-    let buy_providers: Vec<_> =
-        providers.iter().filter(|p| p.provider_type == ProviderType::Buy).collect();
+    let groups = [
+        ("Stream", ProviderType::Stream),
+        ("Rent", ProviderType::Rent),
+        ("Buy", ProviderType::Buy),
+    ]
+    .map(|(label, kind)| {
+        (label, providers.iter().filter(move |p| p.provider_type == kind).collect::<Vec<_>>())
+    });
 
     maud! {
-        div class="mt-3 border-t border-slate-700 pt-3" {
-            h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2" { "Available now" }
-            div class="space-y-2" {
-                @if !stream_providers.is_empty() {
-                    div class="flex items-center gap-2" {
-                        span class="text-xs text-slate-500 w-12" { "Stream" }
-                        div class="flex flex-wrap gap-1.5" {
-                            @for provider in &stream_providers {
-                                (provider_icon(provider))
-                            }
-                        }
-                    }
-                }
-                @if !rent_providers.is_empty() {
-                    div class="flex items-center gap-2" {
-                        span class="text-xs text-slate-500 w-12" { "Rent" }
-                        div class="flex flex-wrap gap-1.5" {
-                            @for provider in &rent_providers {
-                                (provider_icon(provider))
-                            }
-                        }
-                    }
-                }
-                @if !buy_providers.is_empty() {
-                    div class="flex items-center gap-2" {
-                        span class="text-xs text-slate-500 w-12" { "Buy" }
-                        div class="flex flex-wrap gap-1.5" {
-                            @for provider in &buy_providers {
-                                (provider_icon(provider))
-                            }
+        div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5" {
+            @for (label, group) in &groups {
+                @if !group.is_empty() {
+                    div class="flex items-center gap-1.5" {
+                        span class="text-xs text-slate-500" { (label) }
+                        @for provider in group {
+                            (provider_icon(provider))
                         }
                     }
                 }
@@ -516,70 +491,68 @@ fn provider_list(providers: &[WatchProvider]) -> impl Renderable + '_ {
 }
 
 fn provider_icon(provider: &WatchProvider) -> impl Renderable + '_ {
+    let icon = maud! {
+        img
+            class="w-6 h-6 rounded"
+            src=(format!("https://image.tmdb.org/t/p/w92{}", provider.logo_path))
+            alt=(provider.provider_name)
+            loading="lazy"
+            width="24"
+            height="24";
+    };
+
     maud! {
         @if let Some(link) = &provider.link {
-            a
-                href=(link)
-                target="_blank"
-                rel="noopener noreferrer"
-                title=(provider.provider_name)
-                class="block"
-            {
-                img
-                    class="w-7 h-7 rounded"
-                    src=(format!("https://image.tmdb.org/t/p/w92{}", provider.logo_path))
-                    alt=(provider.provider_name)
-                    loading="lazy"
-                    width="28"
-                    height="28";
-            }
+            a href=(link) target="_blank" rel="noopener noreferrer" title=(provider.provider_name) class="block" { (icon) }
         } @else {
-            span title=(provider.provider_name) class="block" {
-                img
-                    class="w-7 h-7 rounded"
-                    src=(format!("https://image.tmdb.org/t/p/w92{}", provider.logo_path))
-                    alt=(provider.provider_name)
-                    loading="lazy"
-                    width="28"
-                    height="28";
-            }
+            span title=(provider.provider_name) class="block" { (icon) }
         }
     }
 }
 
-fn release_list<'a>(
+fn release_row<'a>(
     label: &'a str,
     releases: &'a [ReleaseDate],
     kind: ReleaseType,
+    today: Date,
+    country: &'a str,
 ) -> impl Renderable + 'a {
-    let border = match kind {
-        ReleaseType::Theatrical => "border-purple-400",
-        ReleaseType::Digital => "border-blue-400",
+    let (badge, icon) = match kind {
+        ReleaseType::Theatrical => (
+            "bg-purple-500/15 text-purple-300 ring-purple-400/30",
+            "M16.5 6v.75m0 3v.75m0 3v.75m0 3V18m-9-5.25h5.25M7.5 15h3M3.375 5.25c-.621 \
+             0-1.125.504-1.125 1.125v3.026a2.999 2.999 0 0 1 0 5.198v3.026c0 .621.504 1.125 1.125 \
+             1.125h17.25c.621 0 1.125-.504 1.125-1.125v-3.026a2.999 2.999 0 0 1 \
+             0-5.198V6.375c0-.621-.504-1.125-1.125-1.125H3.375Z",
+        ),
+        ReleaseType::Digital => (
+            "bg-sky-500/15 text-sky-300 ring-sky-400/30",
+            "M6 20.25h12m-7.5-3v3m3-3v3m-10.125-3h17.25c.621 0 1.125-.504 \
+             1.125-1.125V4.875c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 \
+             1.125v11.25c0 .621.504 1.125 1.125 1.125Z",
+        ),
     };
+    let mut releases: Vec<_> = releases.iter().collect();
+    releases.sort_by_key(|r| r.date);
+    let past = releases.first().map(|r| r.date < today);
+    let fallback = releases.iter().find_map(|r| r.note.as_deref().filter(|n| *n != country));
 
     maud! {
-        div class=(format!("border-l-3 {} pl-2.5", border)) {
-            h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wide" { (label) }
-            @if releases.is_empty() {
-                p class="mt-1 text-sm text-slate-500" { "—" }
-            } @else {
-                ul class="mt-1 space-y-0.5" {
-                    @for rel in releases {
-                        li class="text-sm text-slate-300" {
-                            span class="font-medium" { (format_date(rel)) }
-                            @if let Some(note) = &rel.note {
-                                span class="text-slate-500" { " · " (note) }
-                            }
-                        }
-                    }
+        @if let Some(past) = past {
+            div class="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm" {
+                span class=(format!("inline-flex flex-shrink-0 items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset {badge}")) {
+                    (Raw::dangerously_create(format!(r#"<svg class="h-3.5 w-3.5 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="{icon}"/></svg>"#)))
+                    (label)
+                }
+                span class=(if past { "text-slate-400" } else { "font-medium text-slate-100" }) {
+                    (releases.iter().map(|r| r.date.strftime("%-d %b %Y").to_string()).collect::<Vec<_>>().join(", "))
+                }
+                @if let Some(code) = fallback {
+                    span class="rounded border border-slate-600 px-1 text-[10px] font-medium leading-4 text-slate-400" title=(format!("{} release date", get_country_name(code))) { (code) }
                 }
             }
         }
     }
-}
-
-fn format_date(rel: &ReleaseDate) -> String {
-    rel.date.strftime("%-d %b %Y").to_string()
 }
 
 fn country_selector_script() -> impl Renderable {
