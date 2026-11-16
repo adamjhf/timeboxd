@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use axum::{
     extract::{Multipart, Query, State},
-    http::{HeaderValue, StatusCode},
+    http::{HeaderMap, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
 };
 use axum_extra::extract::{CookieJar, cookie::Cookie};
@@ -11,13 +11,27 @@ use serde::Deserialize;
 use time::Duration;
 use tracing::{error, info};
 
-use crate::{AppState, error::AppResult, models::TrackRequest, templates, watchlist};
+use crate::{
+    AppState, countries::COUNTRIES, error::AppResult, models::TrackRequest, templates, watchlist,
+};
 
 const WATCHLIST_COOKIE: &str = "watchlist";
 const COUNTRY_COOKIE: &str = "country";
 
-pub async fn index(State(state): State<Arc<AppState>>, jar: CookieJar) -> AppResult<Html<String>> {
-    let country = jar.get(COUNTRY_COOKIE).map(|c| c.value().to_string());
+pub async fn index(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    jar: CookieJar,
+) -> AppResult<Html<String>> {
+    // Cloudflare sets CF-IPCountry from the client IP when the site is proxied through it; without
+    // it the page falls back to the browser's timezone and language.
+    let country = jar.get(COUNTRY_COOKIE).map(|c| c.value().to_string()).or_else(|| {
+        headers
+            .get("cf-ipcountry")
+            .and_then(|v| v.to_str().ok())
+            .filter(|code| COUNTRIES.iter().any(|c| c.code.eq_ignore_ascii_case(code)))
+            .map(str::to_uppercase)
+    });
     let saved = match jar.get(WATCHLIST_COOKIE) {
         Some(token) => watchlist::load(state.cache.db(), token.value()).await?,
         None => None,

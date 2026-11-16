@@ -69,6 +69,7 @@ pub fn index_page(saved: Option<&SavedWatchlist>, saved_country: Option<&str>) -
                                                 class="country-option px-3 py-2 text-slate-200 hover:bg-slate-600 cursor-pointer focus:bg-orange-900 focus:outline-none"
                                                 data-code=(country.code)
                                                 data-name=(country.name)
+                                                data-timezones=(country.timezones.join(" "))
                                                 tabindex="-1"
                                                 onclick=(format!("selectCountry('{}', '{}')", country.code, country.name))
                                             {
@@ -807,6 +808,34 @@ fn country_selector_script() -> impl Renderable {
                         selectedIndex = -1;
                     }
                 });
+
+                // With no saved or IP-based country, guess from the timezone, then the language.
+                function suggestCountry() {
+                    if (document.getElementById('country').value) {
+                        return;
+                    }
+                    const options = Array.from(document.getElementsByClassName('country-option'));
+                    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                    const locales = (navigator.languages || [navigator.language]).flatMap(tag => {
+                        try {
+                            return [new Intl.Locale(tag)];
+                        } catch {
+                            return [];
+                        }
+                    });
+                    const regions = [
+                        ...locales.map(locale => locale.region),
+                        ...locales.map(locale => locale.maximize().region),
+                    ];
+                    const option =
+                        options.find(o => o.getAttribute('data-timezones').split(' ').includes(timeZone)) ||
+                        regions.map(r => options.find(o => o.getAttribute('data-code') === r)).find(Boolean);
+                    if (option) {
+                        document.getElementById('country').value = option.getAttribute('data-code');
+                        document.getElementById('country-search').value = option.getAttribute('data-name');
+                    }
+                }
+                suggestCountry();
 
                 // Also runs when the back button restores the page after an upload
                 window.addEventListener('pageshow', function() {
