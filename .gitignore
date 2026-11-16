@@ -12,6 +12,9 @@ devenv.local.yaml
 # Rust
 /target
 
+# Amp orb portal state
+.amp/portals/
+
 # Local config
 .env
 .env.*

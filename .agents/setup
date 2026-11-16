@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Prepares an Amp orb: installs Nix if missing, builds the flake dev shell, exports its environment
+# to login shells started in this repository, and pre-builds the workspace.
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+step() {
+  printf '\n==> %s\n' "$*"
+  SECONDS=0
+}
+done_step() {
+  printf '    done in %ss\n' "$SECONDS"
+}
+
+nix_profile="$HOME/.nix-profile"
+env_file="$HOME/.cache/timeboxd/dev-env.sh"
+
+step "Nix"
+if [[ ! -x "$nix_profile/bin/nix" ]]; then
+  curl -fsSL https://nixos.org/nix/install | sh -s -- --no-daemon --yes
+fi
+if [[ ! -f "$HOME/.config/nix/nix.conf" ]] || ! grep -q flakes "$HOME/.config/nix/nix.conf"; then
+  mkdir -p "$HOME/.config/nix"
+  echo "experimental-features = nix-command flakes" >> "$HOME/.config/nix/nix.conf"
+fi
+# The installer cannot update this running script's environment.
+# shellcheck disable=SC1091
+source "$nix_profile/etc/profile.d/nix.sh"
+nix --version
+done_step
+
+step "Flake dev shell environment"
+# Export only the dev shell's variables, not its temporary directories, shell, or PORT, so
+# supervised services keep the PORT Amp assigns them. The skipped names follow nix's own list.
+mkdir -p "$(dirname "$env_file")"
+nix print-dev-env --json "$repo_root" | jq -r '
+  def skip: [
+    "BASHOPTS", "HOME", "NIX_BUILD_TOP", "NIX_ENFORCE_PURITY", "NIX_LOG_FD", "NIX_REMOTE", "OLDPWD",
+    "PATH", "PORT", "PPID", "SHELL", "SHELLOPTS", "SSL_CERT_FILE", "TEMP", "TEMPDIR", "TERM", "TMP",
+    "TMPDIR", "TZ", "UID", "XDG_DATA_DIRS"
+  ];
+  .variables
+  | (to_entries[]
+      | select(.value.type == "exported" and (.key as $k | skip | index($k) | not))
+      | "export \(.key)=\(.value.value | @sh)"),
+    "export PATH=\(.PATH.value | @sh):\"$PATH\"",
+    "export XDG_DATA_DIRS=\(.XDG_DATA_DIRS.value | @sh):\"${XDG_DATA_DIRS:-/usr/local/share:/usr/share}\""
+' > "$env_file.tmp"
+mv "$env_file.tmp" "$env_file"
+
+profile_marker="# timeboxd flake development shell"
+if ! grep -Fqx "$profile_marker" "$HOME/.bash_profile" 2>/dev/null; then
+  cat >> "$HOME/.bash_profile" <<EOF
+
+$profile_marker
+if [[ -z "\${IN_NIX_SHELL:-}" && -f "$env_file" ]]; then
+  case "\$PWD" in
+    "$repo_root" | "$repo_root"/*) source "$env_file" ;;
+  esac
+fi
+EOF
+fi
+done_step
+
+# shellcheck disable=SC1090
+source "$env_file"
+
+step "Cargo build and check"
+cargo --version
+cargo build --workspace --locked
+cargo check --workspace --locked
+done_step

@@ -101,6 +101,7 @@
             ];
 
             PORT = port;
+            inherit (commonArgs) LIBCLANG_PATH;
             TMDB_BASE_URL = "https://api.themoviedb.org/3";
             DATABASE_URL = "sqlite://timeboxd.db?mode=rwc";
             CACHE_TTL_DAYS = "7";

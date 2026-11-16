@@ -1,0 +1,6 @@
+services:
+  web:
+    command: cargo run
+    health: /
+    portal:
+      title: timeboxd
