@@ -4,7 +4,7 @@ use sea_orm::entity::prelude::*;
 #[sea_orm(table_name = "film_cache")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
-    pub letterboxd_slug: String,
+    pub letterboxd_uri: String,
     pub tmdb_id: Option<i32>,
     pub title: String,
     pub year: Option<i32>,

@@ -1,9 +1,10 @@
 use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WishlistFilm {
-    pub letterboxd_slug: String,
+    pub letterboxd_uri: String,
+    pub title: String,
     pub year: Option<i16>,
 }
 
@@ -84,7 +85,7 @@ pub struct FilmWithReleases {
     pub title: String,
     pub year: Option<i16>,
     pub tmdb_id: i32,
-    pub letterboxd_slug: String,
+    pub letterboxd_uri: String,
     pub poster_path: Option<String>,
     pub theatrical: Vec<ReleaseDate>,
     pub streaming: Vec<ReleaseDate>,
@@ -94,7 +95,7 @@ pub struct FilmWithReleases {
 
 #[derive(Debug, Deserialize)]
 pub struct TrackRequest {
-    pub username: String,
+    pub watchlist: String,
     pub country: String,
 }
 

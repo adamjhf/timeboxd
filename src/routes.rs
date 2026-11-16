@@ -1,61 +1,91 @@
 use std::sync::Arc;
 
+use anyhow::Context;
 use axum::{
-    extract::{Query, State},
+    extract::{Multipart, Query, State},
     http::{HeaderValue, StatusCode},
-    response::{Html, IntoResponse, Response},
+    response::{Html, IntoResponse, Redirect, Response},
 };
 use axum_extra::extract::{CookieJar, cookie::Cookie};
 use serde::Deserialize;
 use time::Duration;
 use tracing::{error, info};
 
-use crate::{AppState, error::AppResult, models::TrackRequest, templates};
+use crate::{AppState, error::AppResult, models::TrackRequest, templates, watchlist};
 
-pub async fn index(jar: CookieJar) -> Html<String> {
-    let username = jar.get("username").map(|c| c.value().to_string());
-    let country = jar.get("country").map(|c| c.value().to_string());
+const WATCHLIST_COOKIE: &str = "watchlist";
+const COUNTRY_COOKIE: &str = "country";
 
-    Html(templates::index_page(username.as_deref(), country.as_deref()))
+pub async fn index(State(state): State<Arc<AppState>>, jar: CookieJar) -> AppResult<Html<String>> {
+    let country = jar.get(COUNTRY_COOKIE).map(|c| c.value().to_string());
+    let saved = match jar.get(WATCHLIST_COOKIE) {
+        Some(token) => watchlist::load(state.cache.db(), token.value()).await?,
+        None => None,
+    };
+
+    Ok(Html(templates::index_page(saved.as_ref(), country.as_deref())))
+}
+
+pub async fn upload(
+    State(state): State<Arc<AppState>>,
+    jar: CookieJar,
+    mut multipart: Multipart,
+) -> AppResult<Response> {
+    let mut country = String::new();
+    let mut file = None;
+    while let Some(field) = multipart.next_field().await.context("failed to read upload")? {
+        match field.name() {
+            Some("country") => country = field.text().await.context("failed to read upload")?,
+            Some("file") => {
+                let name = field.file_name().unwrap_or_default().to_string();
+                let bytes = field.bytes().await.context("failed to read upload")?;
+                file = Some((name, bytes));
+            },
+            _ => {},
+        }
+    }
+
+    let country = country.trim().to_uppercase();
+    if !is_country_code(&country) {
+        return Ok(upload_error("Please select a valid country."));
+    }
+    let Some((file_name, bytes)) = file.filter(|(_, bytes)| !bytes.is_empty()) else {
+        return Ok(upload_error("Choose your Letterboxd export ZIP or watchlist.csv to upload."));
+    };
+
+    let upload = match watchlist::parse_upload(&file_name, &bytes) {
+        Ok(upload) => upload,
+        Err(err) => return Ok(upload_error(&err.to_string())),
+    };
+    info!(film_count = upload.films.len(), "watchlist uploaded");
+
+    let existing = jar.get(WATCHLIST_COOKIE).map(|c| c.value().to_string());
+    let token = watchlist::save(state.cache.db(), existing.as_deref(), upload).await?;
+
+    Ok((remember(jar, &token, &country), Redirect::to(&templates::results_url(&token, &country)))
+        .into_response())
 }
 
 pub async fn track(
     jar: CookieJar,
     Query(req): Query<TrackRequest>,
 ) -> AppResult<(CookieJar, Html<String>)> {
-    let username = req.username.trim().to_string();
+    let token = req.watchlist.trim().to_string();
     let country = req.country.trim().to_uppercase();
 
-    if username.is_empty() {
-        return Err(anyhow::anyhow!("username is required").into());
-    }
-
-    if country.len() != 2 || !country.chars().all(|c| c.is_ascii_alphabetic()) {
+    if !is_country_code(&country) {
         return Err(anyhow::anyhow!("country must be a 2-letter code").into());
     }
+    if token.is_empty() {
+        return Err(anyhow::anyhow!("saved watchlist not found").into());
+    }
 
-    let max_age = Duration::days(365);
-
-    let username_cookie = Cookie::build(("username", username.clone()))
-        .path("/")
-        .max_age(max_age)
-        .same_site(cookie::SameSite::Lax)
-        .build();
-
-    let country_cookie = Cookie::build(("country", country.clone()))
-        .path("/")
-        .max_age(max_age)
-        .same_site(cookie::SameSite::Lax)
-        .build();
-
-    let jar = jar.add(username_cookie).add(country_cookie);
-
-    Ok((jar, Html(templates::processing_page(&username, &country))))
+    Ok((remember(jar, &token, &country), Html(templates::processing_page(&token, &country))))
 }
 
 #[derive(Debug, Deserialize)]
 pub struct ProcessQuery {
-    username: String,
+    watchlist: String,
     country: String,
 }
 
@@ -63,57 +93,44 @@ pub async fn process(
     State(state): State<Arc<AppState>>,
     Query(q): Query<ProcessQuery>,
 ) -> Response {
-    let username = q.username.trim().to_string();
+    let token = q.watchlist.trim().to_string();
     let country = q.country.trim().to_uppercase();
 
-    info!(username = %username, country = %country, "processing request");
+    info!(country = %country, "processing request");
 
     let result = async {
-        if username.is_empty() {
-            anyhow::bail!("username is required");
-        }
-        if country.len() != 2 || !country.chars().all(|c| c.is_ascii_alphabetic()) {
+        if !is_country_code(&country) {
             anyhow::bail!("country must be a 2-letter code");
         }
 
+        let saved = watchlist::load(state.cache.db(), &token)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("saved watchlist not found"))?;
+
         let today: jiff::civil::Date = jiff::Zoned::now().into();
-        let current_year = today.year();
-        let cutoff_year = current_year.saturating_sub(3);
-
-        let watchlist = crate::scraper::fetch_watchlist(
-            &state.http,
-            &username,
-            state.config.letterboxd_delay_ms,
-            cutoff_year,
-        )
-        .await?;
-        info!(username = %username, film_count = watchlist.len(), "fetched watchlist");
-
-        if watchlist.is_empty() {
-            info!(username = %username, "empty watchlist");
-            return Ok(templates::results_fragment(&username, &country, &[]));
-        }
-
-        let films = crate::processor::process(
-            &state.http,
+        let (films, unmatched) = crate::processor::process(
             &state.cache,
-            &*state.tmdb,
-            watchlist,
+            &state.tmdb,
+            saved.films.clone(),
             &country,
             state.config.max_concurrent,
-            current_year,
+            today.year(),
         )
         .await?;
-        info!(username = %username, result_count = films.len(), "completed processing");
+        info!(
+            result_count = films.len(),
+            unmatched_count = unmatched.len(),
+            "completed processing"
+        );
 
-        Ok::<_, anyhow::Error>(templates::results_fragment(&username, &country, &films))
+        Ok::<_, anyhow::Error>(templates::results_fragment(&saved, &country, &films, &unmatched))
     }
     .await;
 
     let body = match result {
         Ok(html) => html,
         Err(err) => {
-            error!(username = %username, error = %err, "request failed");
+            error!(error = %err, "request failed");
             let user_friendly_error = crate::error::error_to_user_message(&err);
             templates::error_fragment(user_friendly_error)
         },
@@ -124,4 +141,24 @@ pub async fn process(
     resp.headers_mut().insert("datastar-selector", HeaderValue::from_static("#content"));
     resp.headers_mut().insert("datastar-mode", HeaderValue::from_static("outer"));
     resp
+}
+
+fn is_country_code(country: &str) -> bool {
+    country.len() == 2 && country.chars().all(|c| c.is_ascii_alphabetic())
+}
+
+fn remember(jar: CookieJar, token: &str, country: &str) -> CookieJar {
+    let cookie = |name, value: &str| {
+        Cookie::build((name, value.to_string()))
+            .path("/")
+            .max_age(Duration::days(365))
+            .same_site(cookie::SameSite::Lax)
+            .http_only(true)
+            .build()
+    };
+    jar.add(cookie(WATCHLIST_COOKIE, token)).add(cookie(COUNTRY_COOKIE, country))
+}
+
+fn upload_error(message: &str) -> Response {
+    (StatusCode::BAD_REQUEST, Html(templates::error_page(message.to_string()))).into_response()
 }

@@ -54,13 +54,9 @@
 
           nativeBuildInputs =
             with pkgs;
-            [
-              cmake
-              git
-            ]
+            [ git ]
             ++ lib.optionals stdenv.isLinux [
               clang
-              llvmPackages.libclang
               mold
             ];
 
@@ -68,7 +64,6 @@
             if !pkgs.stdenv.isDarwin then "${pkgs.clang}/bin/clang" else null;
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS =
             if !pkgs.stdenv.isDarwin then "-C link-arg=-fuse-ld=${pkgs.mold}/bin/mold" else null;
-          LIBCLANG_PATH = if !pkgs.stdenv.isDarwin then "${pkgs.llvmPackages.libclang.lib}/lib" else null;
         };
 
         timeboxd = craneLib.buildPackage (
@@ -101,14 +96,12 @@
             ];
 
             PORT = port;
-            inherit (commonArgs) LIBCLANG_PATH;
             TMDB_BASE_URL = "https://api.themoviedb.org/3";
             DATABASE_URL = "sqlite://timeboxd.db?mode=rwc";
             CACHE_TTL_DAYS = "7";
             RELEASE_CACHE_HOURS = "24";
             TMDB_RPS = "10";
             MAX_CONCURRENT_REQUESTS = "5";
-            LETTERBOXD_DELAY_MS = "100";
             RUST_LOG = "info,timeboxd=debug,tower_http=debug,sqlx=warn";
           };
 

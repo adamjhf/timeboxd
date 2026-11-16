@@ -4,7 +4,8 @@ Track upcoming theatrical and streaming releases for films in your Letterboxd wa
 
 ## Features
 
-- Fetches films from your Letterboxd watchlist
+- Reads your watchlist from the Letterboxd data export (the ZIP, or just `watchlist.csv`), with no scraping
+- Saves the uploaded watchlist so a bookmarked results link works without uploading again
 - Shows upcoming theatrical and streaming release dates for your selected country
 - Caches film metadata and release dates to minimize API calls
 - Filters to recent films (last 3 years by default)
@@ -38,7 +39,6 @@ RELEASE_CACHE_HOURS=24        # Release dates cache expiry in hours, default: 24
 
 # Performance
 MAX_CONCURRENT_REQUESTS=5     # Concurrent film processing, default: 5
-LETTERBOXD_DELAY_MS=250       # Delay between Letterboxd page requests, default: 250ms
 
 # Logging
 RUST_LOG=info,timeboxd=debug  # Default: info,timeboxd=debug,sqlx=warn
@@ -79,17 +79,15 @@ The server will start on `http://0.0.0.0:3000` by default.
 ## Usage
 
 1. Navigate to `http://localhost:3000`
-2. Enter your Letterboxd username
-3. Select your country
+2. Select your country
+3. Export your data at https://letterboxd.com/user/exportdata/ and upload the ZIP (or the `watchlist.csv` inside it)
 4. View upcoming releases sorted by date
 
 ## How it Works
 
-1. Scrapes your public Letterboxd watchlist
-2. Resolves film titles to TMDB IDs using:
-   - Letterboxd metadata
-   - Film cache
-   - TMDB search API
+1. Reads `watchlist.csv` (and only the username from `profile.csv`) from the uploaded export
+2. Matches each film to TMDB by exact title and year, caching matches by Letterboxd URI;
+   films with no exact match are listed separately rather than guessed
 3. Fetches release dates from TMDB for your selected country
 4. Caches results to reduce API load
 5. Returns films with upcoming theatrical or streaming releases
@@ -99,7 +97,7 @@ The server will start on `http://0.0.0.0:3000` by default.
 - **Framework**: Axum (async web)
 - **Database**: SQLite with SeaORM
 - **Templates**: Hypertext (type-checked HTML)
-- **APIs**: TMDB API, Letterboxd scraping
+- **APIs**: TMDB API
 - **Rate Limiting**: Governor
 
 ## License

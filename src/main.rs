@@ -7,26 +7,28 @@ mod error;
 mod models;
 mod processor;
 mod routes;
-mod scraper;
 mod templates;
 mod tmdb;
+mod watchlist;
 
 use std::{sync::Arc, time::Duration};
 
-use axum::{Router, routing::get};
+use axum::{
+    Router,
+    extract::DefaultBodyLimit,
+    routing::{get, post},
+};
 use tower_http::{
     cors::{Any, CorsLayer},
     trace::TraceLayer,
 };
 use tracing::info;
-use wreq_util::Emulation;
 
 use crate::{cache::CacheManager, config::Config, tmdb::TmdbClient};
 
 #[derive(Clone)]
 pub struct AppState {
     pub config: Arc<Config>,
-    pub http: wreq::Client,
     pub cache: CacheManager,
     pub tmdb: Arc<TmdbClient>,
 }
@@ -42,10 +44,12 @@ async fn main() -> anyhow::Result<()> {
 
     let config = Arc::new(Config::from_env()?);
 
-    let http = wreq::Client::builder()
-        .emulation(Emulation::Chrome131)
-        .timeout(Duration::from_secs(10))
-        .build()?;
+    // ring is already used by sqlx; reqwest's default provider would add aws-lc, a large C build.
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .map_err(|_| anyhow::anyhow!("failed to install rustls crypto provider"))?;
+
+    let http = reqwest::Client::builder().timeout(Duration::from_secs(10)).build()?;
 
     let db = db::connect_and_migrate(&config.database_url).await?;
     let cache = CacheManager::new(
@@ -56,16 +60,17 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let tmdb = TmdbClient::new(
-        http.clone(),
+        http,
         config.tmdb_access_token.clone(),
         config.tmdb_base_url.clone(),
         config.tmdb_rps,
     );
 
-    let state = Arc::new(AppState { config: config.clone(), http, cache, tmdb: Arc::new(tmdb) });
+    let state = Arc::new(AppState { config: config.clone(), cache, tmdb: Arc::new(tmdb) });
 
     let app = Router::new()
         .route("/", get(routes::index))
+        .route("/upload", post(routes::upload).layer(DefaultBodyLimit::max(25 * 1024 * 1024)))
         .route("/release-dates", get(routes::track))
         .route("/process", get(routes::process))
         .with_state(state)

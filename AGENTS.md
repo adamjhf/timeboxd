@@ -4,12 +4,12 @@ This document provides essential information for agentic coding assistants worki
 
 ## Project Overview
 
-Timeboxd is a Rust web application that tracks upcoming theatrical and streaming releases for films in a user's Letterboxd watchlist. It fetches data from Letterboxd (via scraping) and TMDB API, caches results, and displays them in categorized sections with intelligent country fallbacks.
+Timeboxd is a Rust web application that tracks upcoming theatrical and streaming releases for films in a user's Letterboxd watchlist. It reads the watchlist from a Letterboxd data export the user uploads (the ZIP or its `watchlist.csv`), matches films on the TMDB API by title and year, caches results, and displays them in categorized sections with intelligent country fallbacks.
 
 Built with:
 - **Framework**: Axum (async web framework)
 - **Database**: SQLite with SeaORM
-- **External APIs**: TMDB API, Letterboxd scraping
+- **External APIs**: TMDB API (Letterboxd is never scraped; users upload their data export)
 - **Templates**: Hypertext (type-checked HTML with maud macro)
 - **Error Handling**: anyhow with custom AppError wrapper
 
@@ -333,7 +333,6 @@ pub struct Config {
     pub release_cache_hours: i64,
     pub tmdb_rps: u32,
     pub max_concurrent: usize,
-    pub letterboxd_delay_ms: u64,
 }
 ```
 
@@ -364,10 +363,11 @@ tracing_subscriber::fmt()
   - **film_cache.rs**: Film cache entity
   - **release_cache.rs**: Release cache entity
   - **release_cache_meta.rs**: Release cache metadata entity
+  - **watchlist.rs**: Uploaded watchlist entity
 - **models.rs**: Request/response models and data structures
 - **routes.rs**: HTTP route handlers
 - **processor.rs**: Film processing and categorization logic
-- **scraper.rs**: Letterboxd watchlist scraping
+- **watchlist.rs**: Letterboxd export upload parsing and saved watchlists
 - **tmdb.rs**: TMDB API client with rate limiting
 - **cache.rs**: Caching layer for films and releases
 - **templates.rs**: HTML template rendering with Hypertext
@@ -429,10 +429,11 @@ src/
 │   ├── mod.rs
 │   ├── film_cache.rs
 │   ├── release_cache.rs
-│   └── release_cache_meta.rs
+│   ├── release_cache_meta.rs
+│   └── watchlist.rs
 ├── routes.rs           # HTTP route handlers
 ├── processor.rs        # Film processing and categorization
-├── scraper.rs          # Letterboxd watchlist scraping
+├── watchlist.rs        # Letterboxd export upload parsing and saved watchlists
 ├── tmdb.rs             # TMDB API client with rate limiting
 ├── cache.rs            # Caching layer for films and releases
 └── templates.rs        # HTML template rendering with Hypertext

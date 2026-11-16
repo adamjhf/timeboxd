@@ -13,7 +13,7 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub struct FilmCacheData {
-    pub slug: String,
+    pub letterboxd_uri: String,
     pub tmdb_id: Option<i32>,
     pub title: String,
     pub year: Option<i16>,
@@ -49,21 +49,21 @@ impl CacheManager {
 
     pub async fn get_films(
         &self,
-        slugs: &[String],
+        letterboxd_uris: &[String],
     ) -> AppResult<HashMap<String, film_cache::Model>> {
-        if slugs.is_empty() {
+        if letterboxd_uris.is_empty() {
             return Ok(HashMap::new());
         }
 
         let films = film_cache::Entity::find()
-            .filter(film_cache::Column::LetterboxdSlug.is_in(slugs.iter().cloned()))
+            .filter(film_cache::Column::LetterboxdUri.is_in(letterboxd_uris.iter().cloned()))
             .all(&self.db)
             .await?;
 
         let mut result = HashMap::new();
         for film in films {
             if self.is_film_fresh(film.updated_at) {
-                result.insert(film.letterboxd_slug.clone(), film);
+                result.insert(film.letterboxd_uri.clone(), film);
             }
         }
 
@@ -80,7 +80,7 @@ impl CacheManager {
 
         for film in films {
             let model = film_cache::ActiveModel {
-                letterboxd_slug: Set(film.slug),
+                letterboxd_uri: Set(film.letterboxd_uri),
                 tmdb_id: Set(film.tmdb_id),
                 title: Set(film.title),
                 year: Set(film.year.map(|y| y as i32)),
@@ -90,7 +90,7 @@ impl CacheManager {
 
             film_cache::Entity::insert(model)
                 .on_conflict(
-                    sea_orm::sea_query::OnConflict::column(film_cache::Column::LetterboxdSlug)
+                    sea_orm::sea_query::OnConflict::column(film_cache::Column::LetterboxdUri)
                         .update_columns([
                             film_cache::Column::TmdbId,
                             film_cache::Column::Title,

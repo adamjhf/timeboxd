@@ -17,14 +17,14 @@ use crate::{
 };
 
 pub struct TmdbClient {
-    client: wreq::Client,
+    client: reqwest::Client,
     access_token: String,
     base_url: String,
     limiter: Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>,
 }
 
 impl TmdbClient {
-    pub fn new(client: wreq::Client, access_token: String, base_url: String, rps: u32) -> Self {
+    pub fn new(client: reqwest::Client, access_token: String, base_url: String, rps: u32) -> Self {
         if access_token.trim().is_empty() {
             warn!("TMDB_ACCESS_TOKEN not provided, using mock data");
         }
@@ -34,6 +34,8 @@ impl TmdbClient {
         Self { client, access_token, base_url, limiter }
     }
 
+    /// Finds the TMDB movie for a Letterboxd title and year. Only exact title matches count, so a
+    /// film that is not on TMDB stays unmatched instead of resolving to a different film.
     pub async fn search_movie(
         &self,
         title: &str,
@@ -43,49 +45,38 @@ impl TmdbClient {
             return Ok(Some((550, None)));
         }
 
+        let results = self.search(title, year).await?;
+        let mut found = find_match(&results, title, year, year.is_some()).cloned();
+        if found.is_none() && year.is_some() {
+            let results = self.search(title, None).await?;
+            found = find_match(&results, title, year, false).cloned();
+        }
+
+        debug!(title = %title, year = ?year, tmdb_id = ?found.as_ref().map(|m| m.id), "TMDB API: search match");
+        Ok(found.map(|m| (m.id, m.poster_path)))
+    }
+
+    async fn search(&self, title: &str, year: Option<i16>) -> AppResult<Vec<SearchMovie>> {
         self.limiter.until_ready().await;
 
         debug!(title = %title, year = ?year, "TMDB API: searching movie");
 
         let url = format!("{}/search/movie", self.base_url.trim_end_matches('/'));
-        let mut req = self
+        let year = year.map(|y| y.to_string());
+        let mut params = vec![("query", title)];
+        params.extend(year.as_deref().map(|y| ("year", y)));
+
+        let resp: SearchResponse = self
             .client
             .get(url)
             .bearer_auth(&self.access_token)
-            .query(&[("query", &title.to_string())]);
-        if let Some(year) = year {
-            req = req.query(&[("year", year)]);
-        }
-
-        let resp: SearchResponse = req.send().await?.error_for_status()?.json().await?;
-        let result = resp.results.into_iter().next().map(|m| (m.id, m.poster_path));
-        debug!(title = %title, result = ?result, "TMDB API: search result");
-        Ok(result)
-    }
-
-    pub async fn get_movie_details(&self, tmdb_id: i32) -> AppResult<Option<String>> {
-        if self.access_token.trim().is_empty() {
-            return Ok(None);
-        }
-
-        self.limiter.until_ready().await;
-
-        debug!(tmdb_id = tmdb_id, "TMDB API: fetching movie details");
-
-        let url = format!("{}/movie/{}", self.base_url.trim_end_matches('/'), tmdb_id);
-
-        let resp: MovieDetails = self
-            .client
-            .get(url)
-            .bearer_auth(&self.access_token)
+            .query(&params)
             .send()
             .await?
             .error_for_status()?
             .json()
             .await?;
-
-        debug!(tmdb_id = tmdb_id, poster_path = ?resp.poster_path, "TMDB API: movie details result");
-        Ok(resp.poster_path)
+        Ok(resp.results)
     }
 
     pub async fn get_release_dates(
@@ -345,15 +336,65 @@ struct SearchResponse {
     results: Vec<SearchMovie>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 struct SearchMovie {
     id: i32,
+    title: String,
+    original_title: Option<String>,
+    release_date: Option<String>,
     poster_path: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-struct MovieDetails {
-    poster_path: Option<String>,
+impl SearchMovie {
+    fn has_title(&self, wanted: &str) -> bool {
+        normalize_title(&self.title) == wanted
+            || self.original_title.as_deref().is_some_and(|t| normalize_title(t) == wanted)
+    }
+
+    /// Letterboxd takes a film's year from its TMDB release dates, so a film without a year on
+    /// Letterboxd has no release date on TMDB either.
+    fn is_near_year(&self, year: Option<i16>) -> bool {
+        let release_year = self
+            .release_date
+            .as_deref()
+            .and_then(|d| d.get(..4))
+            .and_then(|y| y.parse::<i16>().ok());
+        match (year, release_year) {
+            (Some(year), Some(release_year)) => (release_year - year).abs() <= 1,
+            (None, None) => true,
+            _ => false,
+        }
+    }
+}
+
+/// Picks the first exact-title result whose primary release year is within a year of the
+/// Letterboxd year (or that has no release date when Letterboxd has no year), keeping TMDB's
+/// ranking. TMDB's `year` filter also matches re-releases, so a
+/// 2024 search for a remake can rank the 1994 original first. Results from a year-filtered
+/// search all have a release date in that year, so `accept_any_year` lets them through when no
+/// primary year is close, as with festival films whose premiere year differs.
+fn find_match<'a>(
+    results: &'a [SearchMovie],
+    title: &str,
+    year: Option<i16>,
+    accept_any_year: bool,
+) -> Option<&'a SearchMovie> {
+    let wanted = normalize_title(title);
+    let mut exact = results.iter().filter(|r| r.has_title(&wanted));
+    let first_exact = exact.clone().next();
+    exact.find(|r| r.is_near_year(year)).or(first_exact.filter(|_| accept_any_year))
+}
+
+fn normalize_title(title: &str) -> String {
+    title
+        .to_lowercase()
+        .replace('&', " and ")
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 #[derive(Debug, Deserialize)]
@@ -394,4 +435,60 @@ struct WatchProviderEntry {
     provider_id: i32,
     provider_name: String,
     logo_path: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn movie(id: i32, title: &str, release_date: &str) -> SearchMovie {
+        SearchMovie {
+            id,
+            title: title.to_string(),
+            original_title: None,
+            release_date: Some(release_date.to_string()),
+            poster_path: None,
+        }
+    }
+
+    #[test]
+    fn prefers_remake_over_higher_ranked_original() {
+        let results =
+            [movie(9495, "The Crow", "1994-05-11"), movie(957452, "The Crow", "2024-08-21")];
+        assert_eq!(find_match(&results, "The Crow", Some(2024), true).map(|m| m.id), Some(957452));
+    }
+
+    #[test]
+    fn never_matches_a_different_title() {
+        let results = [movie(1, "Life of Brian", "1979-08-17")];
+        assert!(find_match(&results, "Brian", Some(2026), true).is_none());
+    }
+
+    #[test]
+    fn year_filtered_results_accept_distant_primary_year() {
+        let results = [movie(1486475, "No Rest for the Wicked", "2026-09-03")];
+        let title = "No Rest for the Wicked";
+        assert_eq!(find_match(&results, title, Some(2024), true).map(|m| m.id), Some(1486475));
+        assert!(find_match(&results, title, Some(2024), false).is_none());
+    }
+
+    #[test]
+    fn film_without_year_only_matches_undated_results() {
+        let results = [movie(8009, "Highlander", "1986-03-07"), movie(339727, "Highlander", "")];
+        assert_eq!(find_match(&results, "Highlander", None, false).map(|m| m.id), Some(339727));
+
+        let results = [movie(8095, "Cleopatra", "1963-06-12")];
+        assert!(find_match(&results, "Cleopatra", None, false).is_none());
+    }
+
+    #[test]
+    fn matches_original_title_and_ignores_punctuation() {
+        let mut film = movie(7, "The Good, the Bad & the Ugly", "1966-12-23");
+        film.original_title = Some("Il buono, il brutto, il cattivo".to_string());
+        let results = [film];
+        assert!(find_match(&results, "The Good, the Bad and the Ugly", Some(1966), true).is_some());
+        assert!(
+            find_match(&results, "Il Buono, il Brutto, il Cattivo", Some(1966), true).is_some()
+        );
+    }
 }

@@ -13,7 +13,6 @@ pub struct Config {
     pub provider_cache_days: i64,
     pub tmdb_rps: u32,
     pub max_concurrent: usize,
-    pub letterboxd_delay_ms: u64,
 }
 
 impl Config {
@@ -47,9 +46,6 @@ impl Config {
         let max_concurrent: usize =
             std::env::var("MAX_CONCURRENT_REQUESTS").ok().and_then(|s| s.parse().ok()).unwrap_or(5);
 
-        let letterboxd_delay_ms: u64 =
-            std::env::var("LETTERBOXD_DELAY_MS").ok().and_then(|s| s.parse().ok()).unwrap_or(100);
-
         Ok(Self {
             addr: format!("{host}:{port}").parse().context("HOST/PORT")?,
             tmdb_access_token,
@@ -60,7 +56,6 @@ impl Config {
             provider_cache_days,
             tmdb_rps,
             max_concurrent,
-            letterboxd_delay_ms,
         })
     }
 }

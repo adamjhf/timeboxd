@@ -6,7 +6,6 @@
 {
   packages = [
     pkgs.git
-    pkgs.cmake
     pkgs.sqlite
     pkgs.sea-orm-cli
     pkgs.secretspec
@@ -37,7 +36,6 @@
     RELEASE_CACHE_HOURS = "24";
     TMDB_RPS = "10";
     MAX_CONCURRENT_REQUESTS = "5";
-    LETTERBOXD_DELAY_MS = "100";
     RUST_LOG = "info,timeboxd=debug,tower_http=debug,sqlx=warn";
   };
 }

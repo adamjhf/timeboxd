@@ -23,8 +23,8 @@ impl From<sea_orm::DbErr> for AppError {
     }
 }
 
-impl From<wreq::Error> for AppError {
-    fn from(err: wreq::Error) -> Self {
+impl From<reqwest::Error> for AppError {
+    fn from(err: reqwest::Error) -> Self {
         Self(anyhow::Error::new(err))
     }
 }
@@ -47,26 +47,14 @@ pub fn error_to_user_message(err: &anyhow::Error) -> String {
     let err_string = err.to_string();
 
     // Check for specific error patterns and convert to user-friendly messages
-    if err_string.contains("username is required") {
-        return "Please enter a Letterboxd username.".to_string();
-    }
-
     if err_string.contains("country must be a 2-letter code") {
         return "Please select a valid country.".to_string();
     }
 
-    if err_string.contains("404") || err_string.contains("Not Found") {
-        // This could be a user not found or a film page not found
-        if err_string.contains("letterboxd.com") {
-            if err_string.contains("/watchlist/") {
-                return "Letterboxd user not found. Please check the username and try again."
-                    .to_string();
-            } else if err_string.contains("/film/") {
-                return "Unable to find film information. This film may no longer exist on \
-                        Letterboxd."
-                    .to_string();
-            }
-        }
+    if err_string.contains("saved watchlist not found") {
+        return "This saved watchlist no longer exists. Please upload your Letterboxd export \
+                again."
+            .to_string();
     }
 
     if err_string.contains("TMDB API") || err_string.contains("themoviedb") {

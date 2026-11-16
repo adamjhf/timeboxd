@@ -10,19 +10,18 @@ use crate::{
         CountryReleases, FilmWithReleases, ReleaseCategory, ReleaseDate, WatchProvider,
         WishlistFilm,
     },
-    scraper,
     tmdb::TmdbClient,
 };
 
+/// Returns the films matched on TMDB with their releases, and the films that couldn't be matched.
 pub async fn process(
-    http: &wreq::Client,
     cache: &CacheManager,
     tmdb: &TmdbClient,
     films: Vec<WishlistFilm>,
     country: &str,
     max_concurrent: usize,
     current_year: i16,
-) -> AppResult<Vec<FilmWithReleases>> {
+) -> AppResult<(Vec<FilmWithReleases>, Vec<WishlistFilm>)> {
     let cutoff_year = current_year.saturating_sub(3);
 
     debug!(total_films = films.len(), cutoff_year = cutoff_year, "filtering films by year");
@@ -35,54 +34,49 @@ pub async fn process(
     debug!(filtered_films = films.len(), "films after year filtering");
 
     if films.is_empty() {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     }
 
     // Phase 1: Bulk load film cache
-    let slugs: Vec<String> = films.iter().map(|f| f.letterboxd_slug.clone()).collect();
-    let cached_films = cache.get_films(&slugs).await?;
+    let uris: Vec<String> = films.iter().map(|f| f.letterboxd_uri.clone()).collect();
+    let cached_films = cache.get_films(&uris).await?;
     debug!(cached_films = cached_films.len(), "films found in cache");
 
-    // Phase 2: Partition into cached vs uncached
-    let (cached, uncached): (Vec<_>, Vec<_>) = films
-        .into_iter()
-        .partition(|f| cached_films.get(&f.letterboxd_slug).and_then(|c| c.tmdb_id).is_some());
+    // Phases 2-3: Match uncached films by title and year. Films with no match are cached too: every
+    // Letterboxd film comes from TMDB, so a miss only changes if TMDB edits its data.
+    let uncached: Vec<WishlistFilm> =
+        films.iter().filter(|f| !cached_films.contains_key(&f.letterboxd_uri)).cloned().collect();
+    debug!(uncached_count = uncached.len(), "films needing a TMDB match");
 
-    debug!(cached_count = cached.len(), uncached_count = uncached.len(), "partitioned films");
-
-    // Phase 3: Resolve uncached films (scrape Letterboxd, search TMDB)
-    let newly_resolved = resolve_uncached_films(http, tmdb, uncached, max_concurrent).await?;
+    let newly_resolved = resolve_uncached_films(tmdb, uncached, max_concurrent).await;
     cache.upsert_films(newly_resolved.clone()).await?;
     debug!(resolved_count = newly_resolved.len(), "newly resolved films");
 
+    let resolved: HashMap<String, FilmCacheData> =
+        newly_resolved.into_iter().map(|f| (f.letterboxd_uri.clone(), f)).collect();
+
     // Phase 4: Build complete film list with TMDB IDs
     let mut all_films_with_tmdb = Vec::new();
+    let mut unmatched = Vec::new();
 
-    // Add cached films
-    for film in cached {
-        if let Some(cached_film) = cached_films.get(&film.letterboxd_slug) {
-            if let Some(tmdb_id) = cached_film.tmdb_id {
-                all_films_with_tmdb.push((
-                    film.letterboxd_slug.clone(),
-                    tmdb_id,
-                    cached_film.title.clone(),
-                    cached_film.year.map(|y| y as i16),
-                    cached_film.poster_path.clone(),
-                ));
-            }
-        }
-    }
-
-    // Add newly resolved films
-    for film_data in newly_resolved {
-        if let Some(tmdb_id) = film_data.tmdb_id {
-            all_films_with_tmdb.push((
-                film_data.slug,
+    for film in films {
+        let found = cached_films
+            .get(&film.letterboxd_uri)
+            .and_then(|c| c.tmdb_id.map(|id| (id, c.poster_path.clone())))
+            .or_else(|| {
+                resolved
+                    .get(&film.letterboxd_uri)
+                    .and_then(|r| r.tmdb_id.map(|id| (id, r.poster_path.clone())))
+            });
+        match found {
+            Some((tmdb_id, poster_path)) => all_films_with_tmdb.push((
+                film.letterboxd_uri,
                 tmdb_id,
-                film_data.title,
-                film_data.year,
-                film_data.poster_path,
-            ));
+                film.title,
+                film.year,
+                poster_path,
+            )),
+            None => unmatched.push(film),
         }
     }
 
@@ -169,22 +163,22 @@ pub async fn process(
     // Phase 8: Assemble final results
     let mut results = Vec::new();
 
-    for (slug, tmdb_id, title, year, poster_path) in all_films_with_tmdb {
-        debug!(slug = %slug, tmdb_id = tmdb_id, "assembling final result");
+    for (letterboxd_uri, tmdb_id, title, year, poster_path) in all_films_with_tmdb {
+        debug!(uri = %letterboxd_uri, tmdb_id = tmdb_id, "assembling final result");
 
         let (theatrical, streaming, category) = get_releases_with_fallback_bulk(
             &cached_releases,
             &new_releases,
             tmdb_id,
             country,
-            &slug,
+            &letterboxd_uri,
         );
 
         results.push(FilmWithReleases {
             title,
             year,
             tmdb_id,
-            letterboxd_slug: slug,
+            letterboxd_uri,
             poster_path,
             theatrical,
             streaming,
@@ -258,80 +252,42 @@ pub async fn process(
 
     results.sort_by_key(|f| f.theatrical.first().or_else(|| f.streaming.first()).map(|r| r.date));
 
-    Ok(results)
+    Ok((results, unmatched))
 }
 
 async fn resolve_uncached_films(
-    http: &wreq::Client,
     tmdb: &TmdbClient,
     films: Vec<WishlistFilm>,
     max_concurrent: usize,
-) -> AppResult<Vec<FilmCacheData>> {
+) -> Vec<FilmCacheData> {
     debug!(uncached_count = films.len(), "resolving uncached films");
 
-    let items: Vec<AppResult<FilmCacheData>> = stream::iter(films)
+    stream::iter(films)
         .map(|film| async move {
-            debug!(slug = %film.letterboxd_slug, "resolving TMDB ID");
-
-            let (resolved_title, resolved_year, mut tmdb_id, mut poster_path) =
-                match scraper::fetch_letterboxd_film_data(http, &film.letterboxd_slug).await {
-                    Ok(data) => {
-                        if let Some(id) = data.tmdb_id {
-                            debug!(slug = %film.letterboxd_slug, tmdb_id = id, "found TMDB ID from Letterboxd");
-                        }
-                        (data.title, data.year.or(film.year), data.tmdb_id, None)
-                    },
-                    Err(err) => {
-                        warn!(slug = %film.letterboxd_slug, error = %err, "failed to fetch Letterboxd data, using fallback title");
-                        let fallback_title = film.letterboxd_slug
-                            .split('-')
-                            .map(|word| {
-                                let mut chars = word.chars();
-                                match chars.next() {
-                                    None => String::new(),
-                                    Some(first) => first.to_uppercase().chain(chars.as_str().chars()).collect()
-                                }
-                            })
-                            .collect::<Vec<String>>()
-                            .join(" ");
-                        (fallback_title, film.year, None, None)
-                    },
-                };
-
-            if tmdb_id.is_none() {
-                debug!(slug = %film.letterboxd_slug, title = %resolved_title, year = ?resolved_year, "searching TMDB API");
-                if let Some((id, poster)) = tmdb.search_movie(&resolved_title, resolved_year).await? {
-                    debug!(slug = %film.letterboxd_slug, tmdb_id = id, "found TMDB ID via search");
-                    tmdb_id = Some(id);
-                    poster_path = poster;
-                } else {
-                    debug!(slug = %film.letterboxd_slug, "no TMDB ID found");
-                }
-            } else if poster_path.is_none() {
-                poster_path = tmdb.get_movie_details(tmdb_id.unwrap()).await.ok().flatten();
-            }
-
-            Ok(FilmCacheData {
-                slug: film.letterboxd_slug,
-                tmdb_id,
-                title: resolved_title,
-                year: resolved_year,
-                poster_path,
-            })
+            let found = tmdb.search_movie(&film.title, film.year).await;
+            (film, found)
         })
         .buffer_unordered(max_concurrent.max(1))
+        .filter_map(|(film, found)| async move {
+            match found {
+                Ok(found) => {
+                    debug!(uri = %film.letterboxd_uri, title = %film.title, tmdb_id = ?found.as_ref().map(|f| f.0), "resolved TMDB ID");
+                    Some(FilmCacheData {
+                        letterboxd_uri: film.letterboxd_uri,
+                        tmdb_id: found.as_ref().map(|f| f.0),
+                        title: film.title,
+                        year: film.year,
+                        poster_path: found.and_then(|f| f.1),
+                    })
+                },
+                Err(err) => {
+                    warn!(title = %film.title, error = %err, "failed to resolve film");
+                    None
+                },
+            }
+        })
         .collect()
-        .await;
-
-    let mut results = Vec::new();
-    for item in items {
-        match item {
-            Ok(data) => results.push(data),
-            Err(err) => warn!(error = %err, "failed to resolve film"),
-        }
-    }
-
-    Ok(results)
+        .await
 }
 
 fn build_release_requests(
@@ -373,7 +329,7 @@ fn get_releases_with_fallback_bulk(
     new_releases: &HashMap<i32, Vec<CountryReleases>>,
     tmdb_id: i32,
     country: &str,
-    slug: &str,
+    letterboxd_uri: &str,
 ) -> (Vec<ReleaseDate>, Vec<ReleaseDate>, ReleaseCategory) {
     let (local_theatrical, local_streaming) =
         get_release_data(cached_releases, new_releases, tmdb_id, country);
@@ -426,7 +382,7 @@ fn get_releases_with_fallback_bulk(
 
     // Special logic for New Zealand: try Australia first, then US
     if country == "NZ" {
-        debug!(slug = %slug, "no NZ releases found, trying Australia");
+        debug!(uri = %letterboxd_uri, "no NZ releases found, trying Australia");
 
         let (au_theatrical, au_streaming) =
             get_release_data(cached_releases, new_releases, tmdb_id, "AU");
@@ -480,7 +436,7 @@ fn get_releases_with_fallback_bulk(
     }
 
     // Fall back to US for all non-US countries
-    debug!(slug = %slug, "no local releases found, trying US");
+    debug!(uri = %letterboxd_uri, "no local releases found, trying US");
 
     let (us_theatrical, us_streaming) =
         get_release_data(cached_releases, new_releases, tmdb_id, "US");

@@ -3,6 +3,7 @@ pub use sea_orm_migration::prelude::*;
 mod m20220101_000001_create_table;
 mod m20250107_000001_create_provider_cache;
 mod m20250109_000001_add_provider_cache_unique;
+mod m20261116_000001_watchlist_upload;
 
 pub struct Migrator;
 
@@ -13,6 +14,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20220101_000001_create_table::Migration),
             Box::new(m20250107_000001_create_provider_cache::Migration),
             Box::new(m20250109_000001_add_provider_cache_unique::Migration),
+            Box::new(m20261116_000001_watchlist_upload::Migration),
         ]
     }
 }

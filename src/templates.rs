@@ -4,15 +4,29 @@ use crate::{
     countries::{COUNTRIES, get_country_name},
     models::{
         FilmWithReleases, ProviderType, ReleaseCategory, ReleaseDate, ReleaseType, WatchProvider,
+        WishlistFilm,
     },
+    watchlist::SavedWatchlist,
 };
 
 const TAILWIND_CDN: &str = "https://cdn.tailwindcss.com";
 const DATASTAR_CDN: &str =
     "https://cdn.jsdelivr.net/npm/@sudodevnull/datastar@0.19.9/dist/datastar.js";
 
-pub fn index_page(saved_username: Option<&str>, saved_country: Option<&str>) -> String {
+const LETTERBOXD_EXPORT_URL: &str = "https://letterboxd.com/user/exportdata/";
+const STALE_AFTER_DAYS: i64 = 14;
+
+pub fn results_url(token: &str, country: &str) -> String {
+    format!(
+        "/release-dates?watchlist={}&country={}",
+        urlencoding::encode(token),
+        urlencoding::encode(country)
+    )
+}
+
+pub fn index_page(saved: Option<&SavedWatchlist>, saved_country: Option<&str>) -> String {
     let country_name = saved_country.map(get_country_name);
+    let saved_link = saved.zip(saved_country).map(|(w, c)| (w, results_url(&w.token, c)));
 
     page(
         "Timeboxd - upcoming film releases from your Letterboxd watchlist",
@@ -23,18 +37,17 @@ pub fn index_page(saved_username: Option<&str>, saved_country: Option<&str>) -> 
                         h1 class="text-2xl sm:text-3xl font-bold text-slate-100" { "Timeboxd" }
                         p class="mt-2 text-slate-400" { "Upcoming film release dates for your Letterboxd watchlist." }
 
-                        form class="mt-8 space-y-6" method="get" action="/release-dates" {
-                            div {
-                                label class="block text-sm font-medium text-slate-300" for="username" { "Letterboxd username" }
-                                input
-                                    class="mt-2 w-full rounded-md border border-slate-600 bg-slate-700 text-slate-100 px-3 py-2 placeholder-slate-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
-                                    name="username"
-                                    id="username"
-                                    value=[saved_username]
-                                    oninput="validateForm()"
-                                    onkeydown="handleUsernameKeydown(event)";
+                        @if let Some((watchlist, link)) = &saved_link {
+                            div class="mt-6 rounded-md border border-slate-600 bg-slate-700/50 p-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between" {
+                                div class="min-w-0" {
+                                    p class="text-sm font-medium text-slate-200" { "Your saved watchlist" }
+                                    p class="mt-0.5 text-sm text-slate-400" { (watchlist_summary(watchlist)) }
+                                }
+                                a class="flex-shrink-0 rounded-md bg-orange-600 px-4 py-2 text-center font-semibold text-white hover:bg-orange-700" href=(link) { "Show release dates" }
                             }
+                        }
 
+                        form id="upload-form" class="mt-8 space-y-6" method="post" action="/upload" enctype="multipart/form-data" onsubmit="startUpload()" {
                             div {
                                 label class="block text-sm font-medium text-slate-300" for="country-search" { "Country" }
                                 div class="relative mt-2" {
@@ -67,7 +80,46 @@ pub fn index_page(saved_username: Option<&str>, saved_country: Option<&str>) -> 
                                 p class="mt-2 text-xs text-slate-500" { "Select a country to see release dates for that region." }
                             }
 
-                             button id="submit-button" class="w-full rounded-md bg-orange-600 px-4 py-2 font-semibold text-white hover:bg-orange-700 focus:outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50 disabled:cursor-not-allowed" type="submit" disabled { "Find release dates" }
+                            div {
+                                p class="block text-sm font-medium text-slate-300" {
+                                    @if saved.is_some() { "Upload a newer watchlist" } @else { "Your Letterboxd watchlist" }
+                                }
+                                ol class="mt-3 space-y-4" {
+                                    li class="flex gap-3" {
+                                        span class="flex-shrink-0 h-6 w-6 rounded-full bg-slate-700 text-xs font-semibold text-slate-200 flex items-center justify-center" { "1" }
+                                        div class="min-w-0" {
+                                            a class="inline-block rounded-md border border-orange-600 px-3 py-1.5 text-sm font-semibold text-orange-400 hover:bg-orange-600 hover:text-white" href=(LETTERBOXD_EXPORT_URL) target="_blank" rel="noopener noreferrer" {
+                                                "Open your Letterboxd export page ↗"
+                                            }
+                                            p class="mt-1.5 text-sm text-slate-400" { "Sign in if asked, then click " span class="text-slate-200" { "Export Data" } ". A ZIP file downloads in a few seconds." }
+                                        }
+                                    }
+                                    li class="flex gap-3" {
+                                        span class="flex-shrink-0 h-6 w-6 rounded-full bg-slate-700 text-xs font-semibold text-slate-200 flex items-center justify-center" { "2" }
+                                        div class="min-w-0 flex-1" {
+                                            div id="drop-zone" class="relative rounded-md border-2 border-dashed border-slate-600 bg-slate-700/40 px-4 py-6 text-center hover:border-orange-500 transition-colors" {
+                                                input
+                                                    type="file"
+                                                    name="file"
+                                                    id="file"
+                                                    accept=".zip,.csv,application/zip,text/csv"
+                                                    class="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                                                    aria-label="Letterboxd export ZIP or watchlist.csv"
+                                                    onchange="fileChosen()"
+                                                    ondragenter="setDragging(true)"
+                                                    ondragleave="setDragging(false)"
+                                                    ondrop="setDragging(false)";
+                                                p id="file-name" class="font-medium text-slate-200" { "Drop the ZIP here, or click to choose it" }
+                                                p class="mt-1 text-xs text-slate-400" { "No need to unzip it. Just watchlist.csv works too." }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            button id="submit-button" class="w-full rounded-md bg-orange-600 px-4 py-2 font-semibold text-white hover:bg-orange-700 focus:outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50 disabled:cursor-not-allowed" type="submit" disabled { "Find release dates" }
+
+                            p class="text-xs text-slate-500" { "Privacy: only watchlist.csv and your username are read from the ZIP. Your email, diary and reviews are ignored and never stored. To share even less, unzip the export and upload just watchlist.csv." }
                         }
                         (country_selector_script())
                     }
@@ -77,23 +129,23 @@ pub fn index_page(saved_username: Option<&str>, saved_country: Option<&str>) -> 
     )
 }
 
-pub fn processing_page(username: &str, country: &str) -> String {
+pub fn processing_page(token: &str, country: &str) -> String {
     let url = format!(
-        "/process?username={}&country={}",
-        urlencoding::encode(username),
+        "/process?watchlist={}&country={}",
+        urlencoding::encode(token),
         urlencoding::encode(country)
     );
 
     page(
-        &format!("Upcoming film releases for {username} - Timeboxd"),
+        "Upcoming film releases - Timeboxd",
         maud! {
             div class="min-h-screen bg-slate-900 flex items-center justify-center" {
                 div id="content" class="max-w-xl w-full px-6" {
                     div class="bg-slate-800 shadow-xl rounded-lg p-8 text-center border border-slate-700" {
                         div class="mx-auto h-12 w-12 rounded-full border-4 border-slate-700 border-t-orange-600 animate-spin" {}
                         h1 class="mt-6 text-xl font-semibold text-slate-100" { "Processing" }
-                        p class="mt-2 text-slate-400" { "Fetching watchlist and checking release dates." }
-                        p class="mt-2 text-sm text-slate-500" { "This may take a minute for large watchlists." }
+                        p class="mt-2 text-slate-400" { "Matching your watchlist and checking release dates." }
+                        p class="mt-2 text-sm text-slate-500" { "The first run can take a minute for large watchlists." }
                     }
                 }
             }
@@ -102,23 +154,43 @@ pub fn processing_page(username: &str, country: &str) -> String {
                     .then(response => response.text())
                     .then(html => {{
                         document.getElementById('content').innerHTML = html;
-                        document.title = 'Upcoming film releases for {} - Timeboxd';
                     }})
                     .catch(error => {{
                         document.getElementById('content').innerHTML = '<div class=\"bg-slate-800 shadow-xl rounded-lg p-8 border border-slate-700\"><h1 class=\"text-2xl font-bold text-slate-100\">Error</h1><p class=\"mt-4 text-slate-400\">' + error.message + '</p></div>';
                     }});
-            ", url, username))) }
+            ", url))) }
         },
     )
 }
 
-pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases]) -> String {
+fn watchlist_summary(watchlist: &SavedWatchlist) -> String {
+    let who = watchlist.username.as_ref().map(|u| format!("@{u} · ")).unwrap_or_default();
+    let count = watchlist.films.len();
+    let plural = if count == 1 { "" } else { "s" };
+    format!("{who}{count} film{plural} · uploaded {}", format_timestamp(watchlist.uploaded_at))
+}
+
+fn format_timestamp(ts: jiff::Timestamp) -> String {
+    ts.to_zoned(jiff::tz::TimeZone::system()).strftime("%-d %b %Y").to_string()
+}
+
+pub fn results_fragment(
+    watchlist: &SavedWatchlist,
+    country: &str,
+    films: &[FilmWithReleases],
+    unmatched: &[WishlistFilm],
+) -> String {
     let country_name = get_country_name(country);
-    let letterboxd_user_url = format!("https://letterboxd.com/{}/", username);
+    let age_days =
+        (jiff::Timestamp::now().as_second() - watchlist.uploaded_at.as_second()) / 86_400;
 
     let today: jiff::civil::Date = jiff::Zoned::now().into();
     let current_year = today.year();
     let min_year = current_year - 1;
+
+    let mut unmatched: Vec<_> =
+        unmatched.iter().filter(|f| f.year.is_none_or(|y| y >= min_year)).collect();
+    unmatched.sort_by(|a, b| a.title.cmp(&b.title));
 
     fn sort_by_first_release_date(films: &mut Vec<&FilmWithReleases>) {
         films.sort_by(|a, b| {
@@ -184,18 +256,32 @@ pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases
                      h1 class="text-xl sm:text-2xl font-bold text-slate-100" { "Timeboxd" }
                      p class="mt-1 text-sm text-slate-400 whitespace-nowrap" { "Local release dates for your Letterboxd watchlist" }
                      p class="mt-1 text-sm text-slate-400" {
-                         a class="text-orange-500 hover:text-orange-400" href=(letterboxd_user_url) target="_blank" rel="noopener noreferrer" {
-                             "@" (username)
+                         @if let Some(username) = &watchlist.username {
+                             a class="text-orange-500 hover:text-orange-400" href=(format!("https://letterboxd.com/{}/", urlencoding::encode(username))) target="_blank" rel="noopener noreferrer" {
+                                 "@" (username)
+                             }
+                         } @else {
+                             "Your watchlist"
                          }
                          " · " (country_name)
+                     }
+                     p class="mt-1 text-xs text-slate-500" {
+                         "From your export on " (format_timestamp(watchlist.uploaded_at)) " · "
+                         a class="text-orange-500 hover:text-orange-400" href="/" { "Update" }
+                         " · Bookmark this page to come back without uploading again."
+                     }
+                     @if age_days >= STALE_AFTER_DAYS {
+                         p class="mt-1 text-xs text-amber-400" {
+                             "This export is " (age_days) " days old. Upload a new one to include films you've added since."
+                         }
                      }
                  }
                  a class="mt-2 text-sm text-orange-500 hover:text-orange-400 flex-shrink-0" href="/" { "New query" }
               }
 
-            @if films.is_empty() {
+            @if films.is_empty() && unmatched.is_empty() {
                 div class="mt-4 bg-slate-800 shadow-xl rounded-lg p-4 border border-slate-700" {
-                    p class="text-slate-400" { "No films found in watchlist." }
+                    p class="text-slate-400" { "No recent films found in watchlist." }
                 }
             } @else {
                 @if !local_upcoming_films.is_empty() {
@@ -244,7 +330,26 @@ pub fn results_fragment(username: &str, country: &str, films: &[FilmWithReleases
                     }
                 }
 
-                @if local_upcoming_films.is_empty() && local_already_available_films.is_empty() && no_releases.is_empty() {
+                @if !unmatched.is_empty() {
+                    div class="mt-6" {
+                        h2 class="text-lg font-semibold text-slate-200 mb-2" { "Couldn't find on TMDB" }
+                        p class="text-sm text-slate-400 mb-2" { "No film on TMDB has exactly this title and year." }
+                        ul class="bg-slate-800 shadow-xl rounded border border-slate-700 divide-y divide-slate-700" {
+                            @for film in &unmatched {
+                                li class="px-3 py-2 text-sm" {
+                                    a class="text-slate-200 hover:text-orange-500" href=(film.letterboxd_uri) target="_blank" rel="noopener noreferrer" {
+                                        (film.title)
+                                        @if let Some(year) = film.year {
+                                            span class="ml-1.5 text-slate-400" { "(" (year) ")" }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                @if local_upcoming_films.is_empty() && local_already_available_films.is_empty() && no_releases.is_empty() && unmatched.is_empty() {
                     div class="mt-4 bg-slate-800 shadow-xl rounded-lg p-4 border border-slate-700" {
                         p class="text-slate-400" { "No films processed." }
                     }
@@ -306,7 +411,7 @@ fn content_div(inner: impl Renderable) -> String {
 }
 
 fn film_card(film: &FilmWithReleases) -> impl Renderable + '_ {
-    let letterboxd_url = format!("https://letterboxd.com/film/{}/", film.letterboxd_slug);
+    let letterboxd_url = film.letterboxd_uri.clone();
 
     maud! {
         div class="bg-slate-800 shadow-xl rounded p-3 flex gap-3 border border-slate-700" {
@@ -491,23 +596,40 @@ fn country_selector_script() -> impl Renderable {
                     document.getElementById('submit-button').focus();
                 }
 
-                function validateForm() {
-                    const username = document.getElementById('username').value.trim();
+                function isFormReady() {
                     const country = document.getElementById('country').value.trim();
-                    const submitButton = document.getElementById('submit-button');
-                    submitButton.disabled = !username || !country;
+                    return Boolean(country) && document.getElementById('file').files.length > 0;
                 }
 
-                function handleUsernameKeydown(event) {
-                    if (event.key === 'Enter') {
-                        const username = document.getElementById('username').value.trim();
-                        const country = document.getElementById('country').value.trim();
-                        if (username && country) {
-                            event.target.form.submit();
-                        } else {
-                            event.preventDefault();
-                        }
+                function validateForm() {
+                    document.getElementById('submit-button').disabled = !isFormReady();
+                }
+
+                function submitUpload() {
+                    if (isFormReady()) {
+                        startUpload();
+                        document.getElementById('upload-form').submit();
                     }
+                }
+
+                function startUpload() {
+                    const submitButton = document.getElementById('submit-button');
+                    submitButton.disabled = true;
+                    submitButton.textContent = 'Uploading…';
+                }
+
+                function setDragging(dragging) {
+                    const zone = document.getElementById('drop-zone');
+                    zone.classList.toggle('border-orange-500', dragging);
+                    zone.classList.toggle('bg-slate-700', dragging);
+                }
+
+                function fileChosen() {
+                    const file = document.getElementById('file').files[0];
+                    document.getElementById('file-name').textContent =
+                        file ? file.name : 'Drop the ZIP here, or click to choose it';
+                    validateForm();
+                    submitUpload();
                 }
 
                 function handleCountryKeydown(event) {
@@ -515,13 +637,8 @@ fn country_selector_script() -> impl Renderable {
                     const isOpen = !dropdown.classList.contains('hidden');
 
                     if (event.key === 'Enter' && !isOpen) {
-                        const username = document.getElementById('username').value.trim();
-                        const country = document.getElementById('country').value.trim();
-                        if (username && country) {
-                            event.target.form.submit();
-                        } else {
-                            event.preventDefault();
-                        }
+                        event.preventDefault();
+                        submitUpload();
                     }
                 }
 
@@ -691,8 +808,9 @@ fn country_selector_script() -> impl Renderable {
                     }
                 });
 
-                // Initialize form validation on page load
-                document.addEventListener('DOMContentLoaded', function() {
+                // Also runs when the back button restores the page after an upload
+                window.addEventListener('pageshow', function() {
+                    document.getElementById('submit-button').textContent = 'Find release dates';
                     validateForm();
                 });
             "#))
