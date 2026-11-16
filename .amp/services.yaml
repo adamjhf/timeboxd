@@ -1,6 +1,6 @@
 services:
   web:
-    command: cargo run
+    command: source "$HOME/.cache/timeboxd/dev-env.sh" && exec cargo run
     health: /
     portal:
       title: timeboxd
