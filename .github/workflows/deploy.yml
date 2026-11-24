@@ -17,7 +17,7 @@ jobs:
 
     env:
       # Tailscale MagicDNS name; the servers' SSH port is only reachable over Tailscale.
-      SSH_HOST: syd1
+      SSH_HOST: nur1
 
     steps:
       - name: Connect to Tailscale
