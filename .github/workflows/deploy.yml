@@ -52,4 +52,4 @@ jobs:
           # deploy-app (defined in the nixos repo) builds this exact commit, restarts the app's
           # systemd unit and rolls back to the previous release if the new one doesn't come up.
           git archive --format=tar HEAD |
-            ssh -o ServerAliveInterval=60 "${{ secrets.SSH_USER }}@${SSH_HOST}" deploy-app timeboxd "${{ github.sha }}"
+            ssh -o ServerAliveInterval=60 "deploy@${SSH_HOST}" deploy-app timeboxd "${{ github.sha }}"
