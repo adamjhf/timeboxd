@@ -6,6 +6,12 @@ on:
       - master
   workflow_dispatch:
 
+concurrency:
+  # One deploy per host at a time. The in-flight run finishes; the newest pending run replaces
+  # older pending ones.
+  group: timeboxd-nur1
+  cancel-in-progress: false
+
 permissions:
   contents: read
   id-token: write # lets the Tailscale action authenticate with GitHub's OIDC token
@@ -13,6 +19,7 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     name: Deploy
 
     env:
@@ -20,6 +27,8 @@ jobs:
       SSH_HOST: nur1
 
     steps:
+      - uses: actions/checkout@v6
+
       - name: Connect to Tailscale
         uses: tailscale/github-action@v4
         with:
@@ -38,6 +47,9 @@ jobs:
             > $HOME/.ssh/known_hosts
           [ -s $HOME/.ssh/known_hosts ] || { echo "$SSH_HOST advertises no Tailscale SSH host keys" >&2; exit 1; }
 
-      - name: Update nix container
+      - name: Deploy
         run: |
-          ssh -o ServerAliveInterval=60 "${{ secrets.SSH_USER }}@${SSH_HOST}" "nix run --refresh -L 'git+ssh://git@github.com/adamjhf/timeboxd?ref=${{ github.ref }}#container' -- create --start"
+          # deploy-app (defined in the nixos repo) builds this exact commit, restarts the app's
+          # systemd unit and rolls back to the previous release if the new one doesn't come up.
+          git archive --format=tar HEAD |
+            ssh -o ServerAliveInterval=60 "${{ secrets.SSH_USER }}@${SSH_HOST}" deploy-app timeboxd "${{ github.sha }}"
